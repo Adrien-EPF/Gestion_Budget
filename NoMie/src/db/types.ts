@@ -10,5 +10,11 @@ export interface SqlDatabase {
   runAsync(sql: string, params?: unknown[]): Promise<{ lastInsertRowId: number; changes: number }>;
   getAllAsync<T>(sql: string, params?: unknown[]): Promise<T[]>;
   getFirstAsync<T>(sql: string, params?: unknown[]): Promise<T | null>;
+  /**
+   * Runs `task` atomically: every write inside it commits together, or none
+   * does if it throws. Used where one business action is several rows
+   * (a split, a transfer and its mirror).
+   */
+  transactionAsync(task: () => Promise<void>): Promise<void>;
   closeAsync(): Promise<void>;
 }

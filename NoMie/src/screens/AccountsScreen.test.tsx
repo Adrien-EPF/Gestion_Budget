@@ -135,6 +135,40 @@ describe('Écran Comptes', () => {
       expect(screen.getByText('Tout est pointé, rien à faire de ce côté.')).toBeTruthy();
     });
 
+    it('marks a split transaction with its advanced amount, on the account it was made on', async () => {
+      const edenred = await seedAccount(app.dataService, 'EdenRed', 100);
+      await seedTransaction(app.dataService, {
+        accountId: edenred,
+        operationDate: today,
+        amount: -28.5,
+        comment: 'Le Comptoir',
+        splits: [{ amount: -14.25 }, { amount: -14.25, advanced: true }],
+      });
+      await openAccounts();
+
+      expect(screen.getByText(plain(`Avancé ${formatAmount(14.25)}`))).toBeTruthy();
+    });
+
+    it('lists both legs of an inter-account movement, each on its own account, to be pointed separately', async () => {
+      const courant = await seedAccount(app.dataService, 'Compte courant', 1000);
+      const livret = await seedAccount(app.dataService, 'Livret A', 500);
+      const categories = await app.dataService.listCategories();
+      await seedTransaction(app.dataService, {
+        accountId: courant,
+        operationDate: today,
+        amount: -200,
+        comment: 'Vers Livret A',
+        categoryId: categories.find((c) => c.name === 'Mouvement inter-compte')!.id,
+        transferToAccountId: livret,
+      });
+      await openAccounts();
+
+      expect(screen.getAllByLabelText('Vers Livret A, Non pointé')).toHaveLength(2);
+      await press(screen.getAllByLabelText('Vers Livret A, Non pointé')[0]);
+      expect(screen.getAllByLabelText('Vers Livret A, Non pointé')).toHaveLength(1);
+      expect(screen.getByTestId('accounts-total-real').props.children).toBe(formatAmount(1500));
+    });
+
     it('filters the list by account', async () => {
       const courant = await seedAccount(app.dataService, 'Compte courant', 0);
       const livret = await seedAccount(app.dataService, 'Livret A', 0);

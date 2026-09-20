@@ -13,6 +13,7 @@ export async function openExpoSqliteDatabase(name: string): Promise<SqlDatabase>
     },
     getAllAsync: (sql, params = []) => db.getAllAsync(sql, params as SQLite.SQLiteBindParams),
     getFirstAsync: (sql, params = []) => db.getFirstAsync(sql, params as SQLite.SQLiteBindParams),
+    transactionAsync: (task) => db.withTransactionAsync(task),
     closeAsync: () => db.closeAsync(),
   };
 }

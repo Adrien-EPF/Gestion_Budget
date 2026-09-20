@@ -1,5 +1,8 @@
 import type { CategoryKind } from '../services/dataService';
 
+/** The category that makes the service write a transfer's mirror transaction (CONTEXT.md §7). */
+export const TRANSFER_CATEGORY_NAME = 'Mouvement inter-compte';
+
 export interface DefaultCategorySeed {
   name: string;
   kind: CategoryKind;
@@ -32,7 +35,7 @@ export const DEFAULT_CATEGORIES: DefaultCategorySeed[] = [
   { name: 'Don', kind: 'both' },
   { name: 'Retrait', kind: 'expense' },
   { name: 'Virement', kind: 'both' },
-  { name: 'Mouvement inter-compte', kind: 'both' },
+  { name: TRANSFER_CATEGORY_NAME, kind: 'both' },
   { name: 'Salaire/Intérêts/Avantages', kind: 'income' },
   { name: 'Chèque', kind: 'both' },
   { name: 'Avancé', kind: 'both' },

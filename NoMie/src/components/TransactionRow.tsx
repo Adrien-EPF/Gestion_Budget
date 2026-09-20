@@ -24,7 +24,8 @@ export function TransactionRow({
   isFirst = false,
   isLast = false,
 }: TransactionRowProps) {
-  const { comment, categoryName, categoryIcon, amount, status, operationDate } = transaction;
+  const { comment, categoryName, categoryIcon, amount, status, operationDate, advancedAmount } =
+    transaction;
   const label = comment || categoryName || 'Opération';
   // When the label already is the category (no comment), repeating it would be noise.
   const meta = [formatShortDate(operationDate), comment ? categoryName : null]
@@ -64,6 +65,11 @@ export function TransactionRow({
           <Text style={[textStyle('bodySm'), styles.metaText]} numberOfLines={1}>
             {meta}
           </Text>
+          {advancedAmount > 0 ? (
+            <Text style={[textStyle('bodySm'), styles.advance]} numberOfLines={1}>
+              {`Avancé ${formatAmount(advancedAmount)}`}
+            </Text>
+          ) : null}
         </View>
       </View>
       <Text
@@ -131,6 +137,9 @@ const styles = StyleSheet.create({
   metaText: {
     color: colors.ash,
     flexShrink: 1,
+  },
+  advance: {
+    color: colors.advance,
   },
   amount: {
     fontVariant: ['tabular-nums'],

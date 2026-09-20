@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react-native';
+import { act, screen, within } from '@testing-library/react-native';
 import type { DataService } from '../services/dataService';
 import { toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
@@ -171,6 +171,140 @@ describe('Écran Accueil', () => {
 
       await press(screen.getByLabelText('Mois précédent'));
       expect(await screen.findByText('Ce mois')).toBeTruthy();
+    });
+  });
+
+  describe('avances', () => {
+    const addAdvance = async (amount: number, comment = 'Le Comptoir') => {
+      const categories = await app.dataService.listCategories();
+      const id = (name: string) => categories.find((c) => c.name === name)!.id;
+      await add({
+        operationDate: today,
+        amount: -amount * 2,
+        comment,
+        categoryId: id('Restaurant'),
+        splits: [
+          { categoryId: id('Restaurant'), amount: -amount },
+          { categoryId: id('Avancé'), amount: -amount, advanced: true },
+        ],
+      });
+    };
+
+    it('shows nothing about advances when none is pending', async () => {
+      await add({ operationDate: today, amount: -5, comment: 'Café' });
+      expect(screen.queryByText('Avances')).toBeNull();
+    });
+
+    it('summarises what waits to be paid back: title, badge, portions and total', async () => {
+      await addAdvance(14.25, 'Le Comptoir');
+      await addAdvance(50, 'Week-end');
+
+      expect(screen.getByText('Avances')).toBeTruthy();
+      expect(screen.getByText('2 portions en attente de remboursement')).toBeTruthy();
+      expect(screen.getByTestId('home-advances-total').props.children).toBe(formatAmount(64.25));
+      expect(screen.getByText('Avancé')).toBeTruthy(); // the badge
+    });
+
+    it('speaks of a single portion in the singular', async () => {
+      await addAdvance(10);
+      expect(screen.getByText('1 portion en attente de remboursement')).toBeTruthy();
+    });
+
+    it('marks a transaction row with the advanced amount, and only that one', async () => {
+      await addAdvance(14.25, 'Le Comptoir');
+      await add({ operationDate: today, amount: -5, comment: 'Café' });
+
+      expect(screen.getAllByText(plain(`Avancé ${formatAmount(14.25)}`))).toHaveLength(1);
+      const row = screen.getByLabelText('Le Comptoir, Non pointé');
+      expect(within(row).getByText(plain(`Avancé ${formatAmount(14.25)}`))).toBeTruthy();
+      expect(within(screen.getByLabelText('Café, Non pointé')).queryByText(/Avancé/)).toBeNull();
+    });
+
+    it('does not change how the row is pointed: the whole transaction is toggled', async () => {
+      await addAdvance(14.25, 'Le Comptoir');
+      await press(screen.getByLabelText('Le Comptoir, Non pointé'));
+      expect(screen.getByLabelText('Le Comptoir, Pointé')).toBeTruthy();
+      expect(screen.getByTestId('home-total-pointed').props.children).toBe(
+        `Pointé ${formatAmount(1000 - 28.5)}`
+      );
+    });
+
+    it('shows a split transaction’s total in the real balance, not just a portion', async () => {
+      await addAdvance(14.25);
+      expect(screen.getByTestId('home-total-real').props.children).toBe(formatAmount(971.5));
+    });
+  });
+
+  describe('inter-account movement', () => {
+    it('lists both legs, one on each account, and keeps the total balance', async () => {
+      let livret = 0;
+      await seed(app.dataService, async (s) => {
+        livret = (await s.createAccount({ name: 'Livret A', initialBalance: 500 })).id;
+      });
+      const categories = await app.dataService.listCategories();
+      await add({
+        operationDate: today,
+        amount: -200,
+        comment: 'Vers Livret A',
+        categoryId: categories.find((c) => c.name === 'Mouvement inter-compte')!.id,
+        transferToAccountId: livret,
+      });
+
+      expect(screen.getAllByLabelText('Vers Livret A, Non pointé')).toHaveLength(2);
+      expect(screen.getByText(plain(formatAmount(-200, { signed: true })))).toBeTruthy();
+      expect(screen.getByText(plain(formatAmount(200, { signed: true })))).toBeTruthy();
+      expect(screen.getByTestId('home-total-real').props.children).toBe(formatAmount(1500));
+    });
+  });
+
+  describe('budgets', () => {
+    const categoryIdOf = async (name: string) =>
+      (await app.dataService.listCategories()).find((c) => c.name === name)!.id;
+    const budget = (name: string, amount: number) =>
+      seed(app.dataService, async (s) => {
+        await s.createBudget({ categoryId: await categoryIdOf(name), amount });
+      });
+
+    it('has no Budgets section until a budget exists', async () => {
+      expect(screen.queryByText('Tout voir')).toBeNull();
+    });
+
+    it('previews at most three budgets, with a link to the Budgets screen', async () => {
+      await budget('Restaurant', 100);
+      await budget('Loisir', 100);
+      await budget('Voiture', 100);
+      await budget('Culture', 100);
+
+      expect(screen.getByText('Tout voir')).toBeTruthy();
+      expect(screen.getAllByLabelText(/^Report du reliquat, /)).toHaveLength(3);
+      // Budgets come in category order (Voiture, Loisir, Restaurant, Culture): the fourth is left out.
+      expect(screen.queryByLabelText('Report du reliquat, Culture')).toBeNull();
+    });
+
+    it('shows each budget’s consumption and follows what is spent', async () => {
+      await budget('Restaurant', 120);
+      await add({
+        operationDate: today,
+        amount: -30,
+        comment: 'Déj',
+        categoryId: await categoryIdOf('Restaurant'),
+      });
+
+      expect(screen.getByText(plain('30 / 120 €'))).toBeTruthy();
+      expect(screen.getByText(plain(`Il reste ${formatAmount(90)} pour ce mois-ci.`))).toBeTruthy();
+    });
+
+    it('flips a budget’s carry-over from Accueil too', async () => {
+      await budget('Restaurant', 120);
+      await press(screen.getByLabelText('Report du reliquat, Restaurant'));
+      expect(screen.getByText('Le reste du mois passé s’ajoute à ce budget')).toBeTruthy();
+    });
+
+    it('goes to the Budgets screen on « Tout voir »', async () => {
+      await budget('Restaurant', 100);
+      await press(screen.getByText('Tout voir'));
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Budgets');
+      expect(await screen.findByText('+ Ajouter un budget')).toBeTruthy();
     });
   });
 });

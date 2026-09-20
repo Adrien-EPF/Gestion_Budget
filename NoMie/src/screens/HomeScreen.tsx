@@ -1,5 +1,8 @@
 import React from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AdvancesCard } from '../components/AdvancesCard';
+import { BudgetCard } from '../components/BudgetCard';
+import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { TransactionRow } from '../components/TransactionRow';
 import { formatMonthLabel } from '../navigation/formatMonthLabel';
@@ -11,7 +14,9 @@ import { colors, rounded, spacing, textStyle } from '../theme/tokens';
 import { dayOfMonth } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 
-/** Accueil (handoff §6.1), base version: Budgets and Avances sections come with their own tickets. */
+const BUDGET_PREVIEW_COUNT = 3;
+
+/** Accueil (handoff §6.1). */
 export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const dataService = useDataService();
   const { year, month } = useMonth();
@@ -21,8 +26,18 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const summaries = useServiceQuery((s) => s.listAccountSummaries({ year, month }), [year, month]);
   const monthSummary = useServiceQuery((s) => s.getMonthSummary({ year, month }), [year, month]);
   const transactions = useServiceQuery((s) => s.listMonthTransactions({ year, month }), [year, month]);
+  const budgetOverview = useServiceQuery((s) => s.getBudgetOverview({ year, month }), [year, month]);
+  const advances = useServiceQuery((s) => s.getPendingAdvances());
 
-  if (!totals || toPointCount === undefined || !summaries || !monthSummary || !transactions) {
+  if (
+    !totals ||
+    toPointCount === undefined ||
+    !summaries ||
+    !monthSummary ||
+    !transactions ||
+    !budgetOverview ||
+    !advances
+  ) {
     return <Screen title="NoMie" showMonthSelector>{null}</Screen>;
   }
 
@@ -117,6 +132,29 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
           <Text style={[textStyle('bodySm'), styles.note]}>{forecastNote(monthSummary)}</Text>
         ) : null}
       </View>
+
+      {budgetOverview.budgets.length > 0 ? (
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[textStyle('headingMd'), styles.sectionTitle]}>Budgets</Text>
+            <Button
+              label="Tout voir"
+              variant="ghost"
+              onPress={() => navigation.navigate('Budgets')}
+              style={styles.seeAll}
+            />
+          </View>
+          {budgetOverview.budgets.slice(0, BUDGET_PREVIEW_COUNT).map((progress) => (
+            <BudgetCard key={progress.budget.id} progress={progress} month={{ year, month }} />
+          ))}
+        </View>
+      ) : null}
+
+      {advances.count > 0 ? (
+        <View style={styles.section}>
+          <AdvancesCard advances={advances} />
+        </View>
+      ) : null}
 
       <View style={styles.listHeader}>
         <Text style={[textStyle('headingMd'), styles.sectionTitle]}>Dernières opérations</Text>
@@ -253,6 +291,15 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: colors.ink,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  seeAll: {
+    height: 36,
+    paddingHorizontal: spacing.sm,
   },
   monthCard: {
     flexDirection: 'row',
