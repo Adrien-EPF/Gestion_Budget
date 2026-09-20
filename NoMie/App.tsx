@@ -2,7 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { View } from 'react-native';
 import { RootNavigator } from './src/navigation/RootNavigator';
-import { DataServiceProvider } from './src/services/DataServiceContext';
+import { AppDataServiceProvider } from './src/services/AppDataServiceProvider';
 import { colors } from './src/theme/tokens';
 import { useAppFonts } from './src/theme/useAppFonts';
 
@@ -14,9 +14,9 @@ export default function App() {
   }
 
   return (
-    <DataServiceProvider>
+    <AppDataServiceProvider>
       <RootNavigator />
       <StatusBar style="dark" />
-    </DataServiceProvider>
+    </AppDataServiceProvider>
   );
 }

@@ -8,8 +8,9 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { RecurrencesScreen } from '../screens/RecurrencesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MonthProvider } from './MonthContext';
+import type { TabParamList } from './types';
 
-const Tab = createBottomTabNavigator();
+const Tab = createBottomTabNavigator<TabParamList>();
 
 /**
  * Bottom tabs keep every screen mounted once visited (React Navigation's

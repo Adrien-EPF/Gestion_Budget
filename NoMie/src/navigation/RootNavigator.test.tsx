@@ -1,43 +1,49 @@
-import { fireEvent, render, screen } from '@testing-library/react-native';
-import React from 'react';
-import { RootNavigator } from './RootNavigator';
+import { screen } from '@testing-library/react-native';
+import { press, renderApp } from '../test-utils/renderWithApp';
 
 describe('RootNavigator — chrome commun', () => {
-  it('shows Accueil first, with the month selector and the FAB', () => {
-    render(<RootNavigator />);
-    expect(screen.getByTestId('app-bar-title').props.children).toBe('NoMie');
+  let teardown: () => Promise<void>;
+
+  afterEach(() => teardown());
+
+  it('shows Accueil first, with the month selector and the FAB', async () => {
+    ({ teardown } = await renderApp());
+    expect((await screen.findByTestId('app-bar-title')).props.children).toBe('NoMie');
     expect(screen.getByTestId('month-label')).toBeTruthy();
     expect(screen.getByLabelText('Nouvelle opération')).toBeTruthy();
   });
 
-  it('switches screen on tab tap and keeps the previous screen state', () => {
-    render(<RootNavigator />);
+  it('switches screen on tab tap and keeps the previous screen state', async () => {
+    ({ teardown } = await renderApp());
+    await screen.findByTestId('app-bar-title');
 
-    fireEvent.press(screen.getByLabelText('Comptes'));
+    await press(screen.getByLabelText('Comptes'));
+    expect(await screen.findByText('Solde total')).toBeTruthy();
     expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
-    expect(screen.queryByText(/L'accueil arrive/)).toBeNull();
 
-    fireEvent.press(screen.getByLabelText('Accueil'));
+    await press(screen.getByLabelText('Accueil'));
     expect(screen.getByTestId('app-bar-title').props.children).toBe('NoMie');
   });
 
-  it('changes the shared month when the chevrons are pressed on Accueil', () => {
-    render(<RootNavigator />);
+  it('changes the shared month when the chevrons are pressed on Accueil', async () => {
+    ({ teardown } = await renderApp());
+    await screen.findByTestId('app-bar-title');
     const monthBefore = screen.getByTestId('month-label').props.children;
 
-    fireEvent.press(screen.getByLabelText('Mois suivant'));
+    await press(screen.getByLabelText('Mois suivant'));
 
     const monthAfter = screen.getByTestId('month-label').props.children;
     expect(monthAfter).not.toBe(monthBefore);
   });
 
-  it('opens the quick-entry stub sheet from the FAB', () => {
-    render(<RootNavigator />);
+  it('opens the quick-entry sheet from the FAB and closes it with Annuler', async () => {
+    ({ teardown } = await renderApp());
+    await screen.findByTestId('app-bar-title');
 
-    fireEvent.press(screen.getByLabelText('Nouvelle opération'));
-    expect(screen.getByText('Nouvelle opération')).toBeTruthy();
+    await press(screen.getByLabelText('Nouvelle opération'));
+    expect(await screen.findByText('Enregistrer')).toBeTruthy();
 
-    fireEvent.press(screen.getByText('Fermer'));
-    expect(screen.queryByText('La saisie rapide arrive dans une prochaine étape.')).toBeNull();
+    await press(screen.getByText('Annuler'));
+    expect(screen.queryByText('Enregistrer')).toBeNull();
   });
 });
