@@ -1,6 +1,15 @@
 import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY_NAME } from '../data/defaultCategories';
 import { COLUMN_MIGRATIONS, SCHEMA_SQL } from '../db/schema';
 import type { SqlDatabase } from '../db/types';
+import { toIsoDate } from '../utils/dates';
+import {
+  nextDay,
+  nextOccurrenceOnOrAfter,
+  occurrencesBetween,
+  type RecurrenceFrequency,
+} from '../utils/recurrence';
+
+export type { RecurrenceFrequency };
 
 export type CategoryKind = 'expense' | 'income' | 'both';
 
@@ -57,6 +66,8 @@ interface TransactionFields {
   status: TransactionStatus;
   /** The other leg of an inter-account movement, when this is one. */
   mirrorTransactionId: number | null;
+  /** The recurrence rule that generated it, when it is an occurrence. */
+  recurrenceRuleId: number | null;
 }
 
 export interface Transaction extends TransactionFields {
@@ -93,6 +104,82 @@ export interface NewTransaction {
    * created in the same write.
    */
   transferToAccountId?: number;
+}
+
+export interface RecurrenceRule {
+  id: number;
+  /** What the occurrences are called (their comment) — « Loyer ». */
+  name: string;
+  accountId: number;
+  /** Signed like a transaction: negative for an expense. */
+  amount: number;
+  categoryId: number | null;
+  frequency: RecurrenceFrequency;
+  /** ISO date of the first occurrence; the day of month / weekday / date of the rest follows it. */
+  referenceDate: string;
+  /** Explicit opt-in: off, occurrences wait for the user to validate them. */
+  automatic: boolean;
+  active: boolean;
+  /** Last day an occurrence may fall on, when the rule ends. */
+  endDate: string | null;
+}
+
+/** A rule joined with what its card displays. */
+export interface RecurrenceRuleItem extends RecurrenceRule {
+  accountName: string;
+  categoryName: string | null;
+  /** First occurrence dated today or later; `null` once the rule is paused or over. */
+  nextOccurrence: string | null;
+}
+
+export interface NewRecurrenceRule {
+  name: string;
+  accountId: number;
+  amount: number;
+  categoryId?: number | null;
+  frequency: RecurrenceFrequency;
+  referenceDate: string;
+  /** Defaults to off: automation is never on unless asked for. */
+  automatic?: boolean;
+  endDate?: string | null;
+}
+
+/** What may be changed on one generated occurrence, without touching its rule. */
+export interface OccurrenceChanges {
+  amount?: number;
+  operationDate?: string;
+  comment?: string;
+}
+
+export interface AppSettings {
+  pinEnabled: boolean;
+  biometricEnabled: boolean;
+  checkReminderEnabled: boolean;
+  monthlyBudgetReviewEnabled: boolean;
+  roundedKeypad: boolean;
+}
+
+export type SettingKey = keyof AppSettings;
+
+const DEFAULT_SETTINGS: AppSettings = {
+  pinEnabled: false,
+  biometricEnabled: false,
+  checkReminderEnabled: false,
+  monthlyBudgetReviewEnabled: false,
+  roundedKeypad: false,
+};
+
+export interface StructureSummary {
+  activeAccounts: number;
+  archivedAccounts: number;
+  /** Categories in use (not hidden). */
+  categories: number;
+  advances: PendingAdvances;
+}
+
+export interface ServiceOptions {
+  /** The clock, injectable so date-dependent rules are testable. */
+  now?: () => Date;
 }
 
 export interface PendingAdvances {
@@ -203,6 +290,7 @@ interface TransactionRow {
   category_id: number | null;
   status: TransactionStatus;
   mirror_transaction_id: number | null;
+  recurrence_rule_id: number | null;
 }
 
 interface TransactionListRow extends TransactionRow {
@@ -225,6 +313,25 @@ interface BudgetRow {
   amount: number;
   carry_over: number;
   start_month: string;
+}
+
+interface RecurrenceRuleRow {
+  id: number;
+  name: string;
+  account_id: number;
+  amount: number;
+  category_id: number | null;
+  frequency: RecurrenceFrequency;
+  reference_date: string;
+  automatic: number;
+  active: number;
+  end_date: string | null;
+  generated_until: string | null;
+}
+
+interface RecurrenceRuleListRow extends RecurrenceRuleRow {
+  account_name: string;
+  category_name: string | null;
 }
 
 interface AccountSummaryRow extends AccountRow {
@@ -266,6 +373,22 @@ function toTransactionFields(row: TransactionRow): TransactionFields {
     categoryId: row.category_id,
     status: row.status,
     mirrorTransactionId: row.mirror_transaction_id,
+    recurrenceRuleId: row.recurrence_rule_id,
+  };
+}
+
+function toRecurrenceRule(row: RecurrenceRuleRow): RecurrenceRule {
+  return {
+    id: row.id,
+    name: row.name,
+    accountId: row.account_id,
+    amount: row.amount,
+    categoryId: row.category_id,
+    frequency: row.frequency,
+    referenceDate: row.reference_date,
+    automatic: row.automatic === 1,
+    active: row.active === 1,
+    endDate: row.end_date,
   };
 }
 
@@ -388,7 +511,8 @@ function deriveInitials(name: string): string {
  * touch the SQL driver directly (see #4 / #3 "Testing Decisions") — this
  * is the app's one seam of test.
  */
-export function createDataService(db: SqlDatabase) {
+export function createDataService(db: SqlDatabase, options: ServiceOptions = {}) {
+  const now = options.now ?? (() => new Date());
   const listeners = new Set<() => void>();
 
   /** Screens stay mounted across tab switches, so they re-read whenever a write lands. */
@@ -498,6 +622,7 @@ export function createDataService(db: SqlDatabase) {
         [id]
       );
       await db.runAsync('DELETE FROM transactions WHERE account_id = ?', [id]);
+      await db.runAsync('DELETE FROM recurrence_rules WHERE account_id = ?', [id]);
       await db.runAsync('DELETE FROM accounts WHERE id = ?', [id]);
     });
     notifyChange();
@@ -549,7 +674,7 @@ export function createDataService(db: SqlDatabase) {
       throw new Error(`A destination account only goes with « ${TRANSFER_CATEGORY_NAME} ».`);
     }
 
-    const fields: Omit<TransactionFields, 'id' | 'mirrorTransactionId'> = {
+    const fields: Omit<TransactionFields, 'id' | 'mirrorTransactionId' | 'recurrenceRuleId'> = {
       accountId: input.accountId,
       operationDate: input.operationDate,
       bankDate: input.bankDate ?? null,
@@ -604,7 +729,7 @@ export function createDataService(db: SqlDatabase) {
       }
     });
     notifyChange();
-    return { id, ...fields, mirrorTransactionId, splits };
+    return { id, ...fields, mirrorTransactionId, recurrenceRuleId: null, splits };
   }
 
   async function getTransaction(id: number): Promise<Transaction | null> {
@@ -886,6 +1011,218 @@ export function createDataService(db: SqlDatabase) {
     };
   }
 
+  const today = () => toIsoDate(now());
+
+  /** How far ahead automatic occurrences are created: through the end of next month. */
+  function generationHorizon(): string {
+    const current = now();
+    const month = { year: current.getFullYear(), month: current.getMonth() };
+    return monthBounds(nextMonth(nextMonth(month)))[0];
+  }
+
+  const RULE_LIST_SELECT = `
+    SELECT r.*, a.name AS account_name, c.name AS category_name
+    FROM recurrence_rules r
+    JOIN accounts a ON a.id = r.account_id
+    LEFT JOIN categories c ON c.id = r.category_id`;
+
+  /**
+   * Creates the Prévision occurrences of every active rule that is set to
+   * automatic, up to the horizon. A rule left on manual never produces
+   * anything here: its occurrences wait for the user (#3 « Récurrence »).
+   * Each rule remembers how far it has been generated, so an occurrence the
+   * user deleted does not come back, and a past date is never backfilled.
+   */
+  async function generateRecurrences(): Promise<number> {
+    const rules = await db.getAllAsync<RecurrenceRuleRow>(
+      `SELECT r.* FROM recurrence_rules r JOIN accounts a ON a.id = r.account_id
+       WHERE r.active = 1 AND r.automatic = 1 AND a.archived = 0
+       ORDER BY r.id ASC`
+    );
+    const horizon = generationHorizon();
+    let created = 0;
+
+    for (const row of rules) {
+      const from = row.generated_until && row.generated_until > today() ? row.generated_until : today();
+      if (from >= horizon) continue;
+      const dates = occurrencesBetween(row.reference_date, row.frequency, from, horizon).filter(
+        (date) => !row.end_date || date <= row.end_date
+      );
+      await db.transactionAsync(async () => {
+        for (const date of dates) {
+          await db.runAsync(
+            `INSERT INTO transactions
+               (account_id, operation_date, bank_date, comment, amount, category_id, status, recurrence_rule_id)
+             VALUES (?, ?, NULL, ?, ?, ?, 'prevision', ?)`,
+            [row.account_id, date, row.name, row.amount, row.category_id, row.id]
+          );
+        }
+        await db.runAsync('UPDATE recurrence_rules SET generated_until = ? WHERE id = ?', [
+          horizon,
+          row.id,
+        ]);
+      });
+      created += dates.length;
+    }
+    if (created > 0) notifyChange();
+    return created;
+  }
+
+  async function createRecurrenceRule(input: NewRecurrenceRule): Promise<RecurrenceRule> {
+    const name = input.name.trim();
+    if (name === '') throw new Error('A recurrence rule needs a name.');
+    if (!Number.isFinite(input.amount) || input.amount === 0) {
+      throw new Error('A recurrence rule needs a non-zero amount.');
+    }
+    if (!(await getAccount(input.accountId))) {
+      throw new Error(`Account ${input.accountId} does not exist.`);
+    }
+    if (input.categoryId != null && input.categoryId === (await getTransferCategoryId())) {
+      throw new Error(`« ${TRANSFER_CATEGORY_NAME} » cannot be recurring: it needs a destination account.`);
+    }
+    if (input.endDate && input.endDate < input.referenceDate) {
+      throw new Error('A recurrence rule cannot end before its reference date.');
+    }
+
+    const automatic = input.automatic ?? false;
+    const result = await db.runAsync(
+      `INSERT INTO recurrence_rules
+         (name, account_id, amount, category_id, frequency, reference_date, automatic, active, end_date)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      [
+        name,
+        input.accountId,
+        input.amount,
+        input.categoryId ?? null,
+        input.frequency,
+        input.referenceDate,
+        automatic ? 1 : 0,
+        input.endDate ?? null,
+      ]
+    );
+    await generateRecurrences();
+    notifyChange();
+    return {
+      id: result.lastInsertRowId,
+      name,
+      accountId: input.accountId,
+      amount: input.amount,
+      categoryId: input.categoryId ?? null,
+      frequency: input.frequency,
+      referenceDate: input.referenceDate,
+      automatic,
+      active: true,
+      endDate: input.endDate ?? null,
+    };
+  }
+
+  async function setRecurrenceAutomatic(id: number, automatic: boolean): Promise<void> {
+    await db.runAsync('UPDATE recurrence_rules SET automatic = ? WHERE id = ?', [automatic ? 1 : 0, id]);
+    await generateRecurrences();
+    notifyChange();
+  }
+
+  async function setRecurrenceActive(id: number, active: boolean): Promise<void> {
+    await db.runAsync('UPDATE recurrence_rules SET active = ? WHERE id = ?', [active ? 1 : 0, id]);
+    await generateRecurrences();
+    notifyChange();
+  }
+
+  /** Rules of active accounts in creation order, each with its next occurrence. */
+  async function listRecurrenceRules(): Promise<RecurrenceRuleItem[]> {
+    const rows = await db.getAllAsync<RecurrenceRuleListRow>(
+      `${RULE_LIST_SELECT} WHERE a.archived = 0 ORDER BY r.id ASC`
+    );
+    return rows.map((row) => {
+      const next = nextOccurrenceOnOrAfter(row.reference_date, row.frequency, today());
+      return {
+        ...toRecurrenceRule(row),
+        accountName: row.account_name,
+        categoryName: row.category_name,
+        nextOccurrence: row.active === 1 && (!row.end_date || next <= row.end_date) ? next : null,
+      };
+    });
+  }
+
+  /** Generated occurrences still to come, soonest first; each is a transaction in its own right. */
+  async function listUpcomingOccurrences(): Promise<TransactionListItem[]> {
+    const rows = await db.getAllAsync<TransactionListRow>(
+      `${LIST_SELECT}
+       WHERE a.archived = 0 AND t.recurrence_rule_id IS NOT NULL
+         AND t.status = 'prevision' AND t.operation_date >= ?
+       ORDER BY t.operation_date ASC, t.id ASC`,
+      [today()]
+    );
+    return rows.map(toTransactionListItem);
+  }
+
+  async function requireOccurrence(id: number): Promise<TransactionRow> {
+    const row = await db.getFirstAsync<TransactionRow>('SELECT * FROM transactions WHERE id = ?', [id]);
+    if (!row || row.recurrence_rule_id === null) {
+      throw new Error(`Transaction ${id} is not a generated occurrence.`);
+    }
+    return row;
+  }
+
+  /** Edits one occurrence only: the rule that generated it, and its other occurrences, stay as they are. */
+  async function updateOccurrence(id: number, changes: OccurrenceChanges): Promise<void> {
+    const row = await requireOccurrence(id);
+    if (changes.amount !== undefined && (!Number.isFinite(changes.amount) || changes.amount === 0)) {
+      throw new Error('An occurrence needs a non-zero amount.');
+    }
+    await db.runAsync(
+      'UPDATE transactions SET amount = ?, operation_date = ?, comment = ? WHERE id = ?',
+      [
+        changes.amount ?? row.amount,
+        changes.operationDate ?? row.operation_date,
+        changes.comment ?? row.comment,
+        id,
+      ]
+    );
+    notifyChange();
+  }
+
+  /** Removes one occurrence only; the rule keeps generating the next ones. */
+  async function deleteOccurrence(id: number): Promise<void> {
+    await requireOccurrence(id);
+    await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
+    notifyChange();
+  }
+
+  async function getSettings(): Promise<AppSettings> {
+    const rows = await db.getAllAsync<{ key: string; value: string }>('SELECT key, value FROM settings');
+    const settings = { ...DEFAULT_SETTINGS };
+    for (const { key, value } of rows) {
+      if (key in settings) settings[key as SettingKey] = value === '1';
+    }
+    return settings;
+  }
+
+  async function setSetting(key: SettingKey, value: boolean): Promise<void> {
+    if (!(key in DEFAULT_SETTINGS)) throw new Error(`Unknown setting « ${key} ».`);
+    await db.runAsync(
+      'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+      [key, value ? '1' : '0']
+    );
+    notifyChange();
+  }
+
+  /** The counts shown under the STRUCTURE links of Réglages. */
+  async function getStructureSummary(): Promise<StructureSummary> {
+    const accounts = await db.getFirstAsync<{ active: number | null; archived: number | null }>(
+      'SELECT SUM(archived = 0) AS active, SUM(archived = 1) AS archived FROM accounts'
+    );
+    const categories = await db.getFirstAsync<{ count: number }>(
+      'SELECT COUNT(*) AS count FROM categories WHERE hidden = 0'
+    );
+    return {
+      activeAccounts: accounts?.active ?? 0,
+      archivedAccounts: accounts?.archived ?? 0,
+      categories: categories?.count ?? 0,
+      advances: await getPendingAdvances(),
+    };
+  }
+
   return {
     initialize,
     subscribe,
@@ -912,6 +1249,17 @@ export function createDataService(db: SqlDatabase) {
     createBudget,
     setBudgetCarryOver,
     getBudgetOverview,
+    generateRecurrences,
+    createRecurrenceRule,
+    setRecurrenceAutomatic,
+    setRecurrenceActive,
+    listRecurrenceRules,
+    listUpcomingOccurrences,
+    updateOccurrence,
+    deleteOccurrence,
+    getSettings,
+    setSetting,
+    getStructureSummary,
   };
 }
 

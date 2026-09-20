@@ -13,6 +13,8 @@ export function AppDataServiceProvider({ children }: { children: React.ReactNode
       .then(createDataService)
       .then(async (service) => {
         await service.initialize();
+        // Automatic rules keep producing occurrences as time passes, so catch up at every launch.
+        await service.generateRecurrences();
         if (!cancelled) setDataService(service);
       });
     return () => {

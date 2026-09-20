@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
+import type { SqlDatabase } from '../db/types';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { DataServiceProvider } from '../services/DataServiceContext';
+import { createDataService } from '../services/dataService';
 import { createTestDataService } from './createTestDataService';
 
 /**
@@ -47,9 +49,22 @@ export async function typeInto(element: Element, text: string) {
  * the same seam the service tests use, so screens are never tested
  * against a mock (#3 "Décisions de test"). `teardown` unmounts before
  * closing the database so no pending read hits a closed connection.
+ *
+ * Pass `reopenOn` to start the app again on a database a previous render
+ * left behind — what a relaunch of the real app does. Its owner closes it.
  */
-export async function renderApp() {
-  const { dataService, close } = await createTestDataService();
+export async function renderApp(options: { reopenOn?: SqlDatabase } = {}) {
+  let db: SqlDatabase;
+  let dataService;
+  let close: () => Promise<void>;
+  if (options.reopenOn) {
+    db = options.reopenOn;
+    dataService = createDataService(db);
+    await dataService.initialize();
+    close = async () => {};
+  } else {
+    ({ dataService, db, close } = await createTestDataService());
+  }
   const utils = render(
     <DataServiceProvider dataService={dataService}>
       <RootNavigator />
@@ -60,6 +75,7 @@ export async function renderApp() {
   return {
     ...utils,
     dataService,
+    db,
     teardown: async () => {
       await settle();
       cleanup();

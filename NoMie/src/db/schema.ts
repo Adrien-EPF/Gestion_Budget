@@ -3,8 +3,7 @@
  * statement is idempotent so a database created by an earlier version
  * upgrades in place on the next launch; columns added to an existing
  * table are handled separately by `COLUMN_MIGRATIONS`, since SQLite has
- * no `ADD COLUMN IF NOT EXISTS`. RecurrenceRule is added by a later
- * ticket without touching the existing tables.
+ * no `ADD COLUMN IF NOT EXISTS`.
  */
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS categories (
@@ -61,6 +60,28 @@ CREATE TABLE IF NOT EXISTS budgets (
   carry_over INTEGER NOT NULL DEFAULT 0,
   start_month TEXT NOT NULL
 );
+
+-- generated_until: exclusive ISO date up to which occurrences were already created, so a
+-- deleted occurrence is never generated again.
+CREATE TABLE IF NOT EXISTS recurrence_rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  account_id INTEGER NOT NULL,
+  amount REAL NOT NULL,
+  category_id INTEGER,
+  frequency TEXT NOT NULL CHECK (frequency IN ('monthly', 'weekly', 'yearly')),
+  reference_date TEXT NOT NULL,
+  automatic INTEGER NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  end_date TEXT,
+  generated_until TEXT
+);
+
+-- Boolean switches of the Réglages screen, stored as '1' / '0'.
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
 
 export interface ColumnMigration {
@@ -72,4 +93,5 @@ export interface ColumnMigration {
 /** Columns added after a table first shipped; applied on launch when missing. */
 export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   { table: 'transactions', column: 'mirror_transaction_id', definition: 'INTEGER' },
+  { table: 'transactions', column: 'recurrence_rule_id', definition: 'INTEGER' },
 ];
