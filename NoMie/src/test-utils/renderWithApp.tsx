@@ -2,6 +2,8 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-
 import React from 'react';
 import type { SqlDatabase } from '../db/types';
 import { RootNavigator } from '../navigation/RootNavigator';
+import { createInMemoryScheduler, type InMemoryScheduler } from '../notifications/inMemoryScheduler';
+import { NotificationSchedulerProvider } from '../notifications/NotificationSchedulerContext';
 import { DataServiceProvider } from '../services/DataServiceContext';
 import { createDataService } from '../services/dataService';
 import { createTestDataService } from './createTestDataService';
@@ -50,13 +52,15 @@ export async function typeInto(element: Element, text: string) {
  * against a mock (#3 "Décisions de test"). `teardown` unmounts before
  * closing the database so no pending read hits a closed connection.
  *
- * Pass `reopenOn` to start the app again on a database a previous render
+ * The OS is replaced by an in-memory scheduler, permission already granted
+ * unless a test passes its own. Pass `reopenOn` to start the app again on a database a previous render
  * left behind — what a relaunch of the real app does. Its owner closes it.
  */
-export async function renderApp(options: { reopenOn?: SqlDatabase } = {}) {
+export async function renderApp(options: { reopenOn?: SqlDatabase; scheduler?: InMemoryScheduler } = {}) {
   let db: SqlDatabase;
   let dataService;
   let close: () => Promise<void>;
+  const scheduler = options.scheduler ?? createInMemoryScheduler({ granted: true });
   if (options.reopenOn) {
     db = options.reopenOn;
     dataService = createDataService(db);
@@ -67,7 +71,9 @@ export async function renderApp(options: { reopenOn?: SqlDatabase } = {}) {
   }
   const utils = render(
     <DataServiceProvider dataService={dataService}>
-      <RootNavigator />
+      <NotificationSchedulerProvider scheduler={scheduler}>
+        <RootNavigator />
+      </NotificationSchedulerProvider>
     </DataServiceProvider>
   );
   // Accueil reads asynchronously; wait for its first paint so tests start from a settled screen.
@@ -76,6 +82,7 @@ export async function renderApp(options: { reopenOn?: SqlDatabase } = {}) {
     ...utils,
     dataService,
     db,
+    scheduler,
     teardown: async () => {
       await settle();
       cleanup();

@@ -3,6 +3,8 @@ import { ScrollView, StyleSheet, Text } from 'react-native';
 import { Screen } from '../components/Screen';
 import { LinkRow, SettingsGroup, SwitchRow } from '../components/SettingsGroup';
 import type { TabScreenProps } from '../navigation/types';
+import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
+import { isNotificationSetting, setNotificationSetting } from '../notifications/reconcile';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import type { SettingKey } from '../services/dataService';
 import { colors, spacing, textStyle } from '../theme/tokens';
@@ -10,11 +12,12 @@ import { describeAccounts, describeAdvances, describeCategories } from '../utils
 
 /**
  * Réglages (handoff §6.5). Every switch persists through the data service;
- * the actions behind them (lock, notifications, backup, export, import) are
- * not built yet, so those rows only hold state or sit inert (#3 « Hors périmètre »).
+ * the notification switches also plan or cancel the matching notification. The
+ * other actions (lock, backup, export, import) are not built yet, so those rows only hold state or sit inert (#3 « Hors périmètre »).
  */
 export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
   const dataService = useDataService();
+  const scheduler = useNotificationScheduler();
   const settings = useServiceQuery((s) => s.getSettings());
   const structure = useServiceQuery((s) => s.getStructureSummary());
 
@@ -22,7 +25,10 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
 
   const switchProps = (key: SettingKey) => ({
     value: settings[key],
-    onValueChange: (value: boolean) => dataService.setSetting(key, value),
+    onValueChange: (value: boolean) =>
+      isNotificationSetting(key)
+        ? setNotificationSetting(dataService, scheduler, key, value)
+        : dataService.setSetting(key, value),
   });
 
   return (

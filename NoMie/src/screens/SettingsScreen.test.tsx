@@ -1,4 +1,5 @@
 import { act, cleanup, screen } from '@testing-library/react-native';
+import { createInMemoryScheduler } from '../notifications/inMemoryScheduler';
 import type { SettingKey } from '../services/dataService';
 import { formatAmount } from '../utils/formatAmount';
 import { plain, press, renderApp, settle } from '../test-utils/renderWithApp';
@@ -104,12 +105,68 @@ describe('Écran Réglages', () => {
       expect(isOn('Empreinte')).toBe(false);
     });
 
-    it('do nothing else: no lock, no notification, no file', async () => {
+    it('do nothing else: no lock, no file', async () => {
       await openSettings();
       await press(screen.getByLabelText('Code PIN'));
       // Still on the same screen, nothing asked, nothing blocked.
       expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
       expect(screen.getByLabelText('Nouvelle opération')).toBeTruthy();
+    });
+  });
+
+  describe('notifications', () => {
+    const planned = async () => (await app.scheduler.listScheduled()).map((spec) => spec.id);
+
+    it.each([
+      ['Rappel de pointage', 'check-reminder'],
+      ['Point budget mensuel', 'monthly-budget-review'],
+    ])('%s plans a notification when turned on and cancels it when turned off', async (label, id) => {
+      await openSettings();
+
+      await press(screen.getByLabelText(label));
+      expect(await planned()).toEqual([id]);
+
+      await press(screen.getByLabelText(label));
+      expect(await planned()).toEqual([]);
+    });
+
+    it('asks for the permission on activation when it was not given', async () => {
+      await app.teardown();
+      const scheduler = createInMemoryScheduler({ granted: false, answer: true });
+      app = await renderApp({ scheduler });
+      await openSettings();
+
+      await press(screen.getByLabelText('Rappel de pointage'));
+
+      expect(scheduler.promptCount).toBe(1);
+      expect(isOn('Rappel de pointage')).toBe(true);
+      expect(await planned()).toEqual(['check-reminder']);
+    });
+
+    it('goes back to off, in the screen and in the saved state, when the permission is refused', async () => {
+      await app.teardown();
+      const scheduler = createInMemoryScheduler({ granted: false, answer: false });
+      app = await renderApp({ scheduler });
+      await openSettings();
+
+      await press(screen.getByLabelText('Rappel de pointage'));
+
+      expect(isOn('Rappel de pointage')).toBe(false);
+      expect((await app.dataService.getSettings()).checkReminderEnabled).toBe(false);
+      expect(await planned()).toEqual([]);
+    });
+
+    it('are planned again at launch when the system lost them', async () => {
+      await openSettings();
+      await press(screen.getByLabelText('Rappel de pointage'));
+      await settle();
+      cleanup();
+      const scheduler = createInMemoryScheduler({ granted: true });
+
+      await renderApp({ reopenOn: app.db, scheduler });
+      await settle();
+
+      expect((await scheduler.listScheduled()).map((spec) => spec.id)).toEqual(['check-reminder']);
     });
   });
 
