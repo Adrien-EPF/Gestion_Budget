@@ -61,6 +61,33 @@ describe('Réconciliation des notifications', () => {
     expect(await scheduledIds(scheduler)).toEqual(['check-reminder']);
   });
 
+  it('plans the monthly review on the 1st at 09:00, with its relaxed text, aimed at Budgets', async () => {
+    const scheduler = createInMemoryScheduler({ granted: true });
+
+    await setNotificationSetting(service.dataService, scheduler, 'monthlyBudgetReviewEnabled', true);
+
+    expect(await scheduler.listScheduled()).toEqual([
+      {
+        id: 'monthly-budget-review',
+        title: 'NoMie',
+        body: 'Un nouveau mois commence : un petit coup d’œil à tes budgets ?',
+        trigger: { type: 'monthly', day: 1, hour: 9, minute: 0 },
+        data: { destination: { screen: 'Budgets' } },
+      },
+    ]);
+  });
+
+  it('keeps the monthly review planned across app launches once the system holds it', async () => {
+    await service.dataService.setSetting('monthlyBudgetReviewEnabled', true);
+    const scheduler = createInMemoryScheduler({ granted: true });
+
+    await reconcileNotifications(service.dataService, scheduler);
+    const [first] = await scheduler.listScheduled();
+    await reconcileNotifications(service.dataService, scheduler);
+
+    expect(await scheduler.listScheduled()).toEqual([first]);
+  });
+
   it('asks for the permission when it was not given yet', async () => {
     const scheduler = createInMemoryScheduler({ granted: false, answer: true });
 

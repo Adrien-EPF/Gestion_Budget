@@ -17,6 +17,7 @@ const notificationFor: Record<NotificationSetting, NotificationSpec> = {
     id: 'monthly-budget-review',
     ...monthlyBudgetReviewCopy,
     trigger: { type: 'monthly', day: 1, hour: 9, minute: 0 },
+    data: { destination: { screen: 'Budgets' } },
   },
 };
 

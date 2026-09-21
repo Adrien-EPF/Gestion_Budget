@@ -65,6 +65,28 @@ describe('RootNavigator — chrome commun', () => {
       expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
     });
 
+    it('opens Budgets when the app is open, from another tab', async () => {
+      const app = await renderApp();
+      teardown = app.teardown;
+      await press(screen.getByLabelText('Réglages'));
+
+      await act(async () => {
+        app.scheduler.simulateTap({ screen: 'Budgets' });
+      });
+
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Budgets');
+    });
+
+    it('opens Budgets when the tap is what launched the app', async () => {
+      const scheduler = createInMemoryScheduler({ granted: true });
+      scheduler.simulateTap({ screen: 'Budgets' });
+
+      const app = await renderApp({ scheduler, firstScreenText: '+ Ajouter un budget' });
+      teardown = app.teardown;
+
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Budgets');
+    });
+
     it('opens Comptes when the tap is what launched the app', async () => {
       const scheduler = createInMemoryScheduler({ granted: true });
       scheduler.simulateTap({ screen: 'Comptes' });
