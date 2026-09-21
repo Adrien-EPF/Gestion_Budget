@@ -1,6 +1,11 @@
-import type { NotificationScheduler, NotificationSpec } from './scheduler';
+import type { NotificationDestination, NotificationScheduler, NotificationSpec } from './scheduler';
 
 export type InMemoryScheduler = NotificationScheduler & {
+  /**
+   * The user taps a notification. With no listener yet — the app was closed —
+   * the tap waits for the app to subscribe, as a cold start does.
+   */
+  simulateTap(destination: NotificationDestination): void;
   /** What the next permission prompt answers. */
   setPermissionAnswer(granted: boolean): void;
   /** Simulates the user revoking or granting the permission in the system settings. */
@@ -19,8 +24,21 @@ export function createInMemoryScheduler(options: { granted?: boolean; answer?: b
   let answer = options.answer ?? true;
   let promptCount = 0;
   const scheduled = new Map<string, NotificationSpec>();
+  const listeners = new Set<(destination: NotificationDestination) => void>();
+  const waitingTaps: NotificationDestination[] = [];
 
   return {
+    simulateTap(destination) {
+      if (listeners.size === 0) waitingTaps.push(destination);
+      else listeners.forEach((listener) => listener(destination));
+    },
+    onNotificationTap(listener) {
+      listeners.add(listener);
+      waitingTaps.splice(0).forEach(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
     async hasPermission() {
       return granted;
     },
@@ -65,6 +83,9 @@ export function createInertScheduler(): NotificationScheduler {
     async cancel() {},
     async listScheduled() {
       return [];
+    },
+    onNotificationTap() {
+      return () => {};
     },
   };
 }

@@ -1,4 +1,5 @@
-import { screen } from '@testing-library/react-native';
+import { act, screen } from '@testing-library/react-native';
+import { createInMemoryScheduler } from '../notifications/inMemoryScheduler';
 import { press, renderApp } from '../test-utils/renderWithApp';
 
 describe('RootNavigator — chrome commun', () => {
@@ -34,6 +35,46 @@ describe('RootNavigator — chrome commun', () => {
 
     const monthAfter = screen.getByTestId('month-label').props.children;
     expect(monthAfter).not.toBe(monthBefore);
+  });
+
+  describe('tap sur une notification', () => {
+    it('opens Comptes on « À pointer » when the app is open', async () => {
+      const app = await renderApp();
+      teardown = app.teardown;
+      await screen.findByTestId('app-bar-title');
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('NoMie');
+
+      await act(async () => {
+        app.scheduler.simulateTap({ screen: 'Comptes' });
+      });
+
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
+      expect(await screen.findByText('À pointer')).toBeTruthy();
+    });
+
+    it('opens Comptes from another tab', async () => {
+      const app = await renderApp();
+      teardown = app.teardown;
+      await press(screen.getByLabelText('Réglages'));
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
+
+      await act(async () => {
+        app.scheduler.simulateTap({ screen: 'Comptes' });
+      });
+
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
+    });
+
+    it('opens Comptes when the tap is what launched the app', async () => {
+      const scheduler = createInMemoryScheduler({ granted: true });
+      scheduler.simulateTap({ screen: 'Comptes' });
+
+      const app = await renderApp({ scheduler, firstScreenText: 'Solde total' });
+      teardown = app.teardown;
+
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
+      expect(await screen.findByText('À pointer')).toBeTruthy();
+    });
   });
 
   it('opens the quick-entry sheet from the FAB and closes it with Annuler', async () => {

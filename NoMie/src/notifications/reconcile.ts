@@ -10,6 +10,8 @@ const notificationFor: Record<NotificationSetting, NotificationSpec> = {
     id: 'check-reminder',
     ...checkReminderCopy,
     trigger: { type: 'weekly', weekday: 1, hour: 18, minute: 0 },
+    // Same destination as the « n à pointer » badge of Accueil.
+    data: { destination: { screen: 'Comptes' } },
   },
   monthlyBudgetReviewEnabled: {
     id: 'monthly-budget-review',

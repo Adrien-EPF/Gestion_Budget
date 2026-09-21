@@ -34,6 +34,22 @@ describe('Réconciliation des notifications', () => {
     expect((await service.dataService.getSettings()).checkReminderEnabled).toBe(false);
   });
 
+  it('plans the reminder weekly, on Sunday at 18:00, with its relaxed text, aimed at « À pointer »', async () => {
+    const scheduler = createInMemoryScheduler({ granted: true });
+
+    await setNotificationSetting(service.dataService, scheduler, 'checkReminderEnabled', true);
+
+    expect(await scheduler.listScheduled()).toEqual([
+      {
+        id: 'check-reminder',
+        title: 'NoMie',
+        body: 'Un petit moment pour pointer tes opérations ?',
+        trigger: { type: 'weekly', weekday: 1, hour: 18, minute: 0 },
+        data: { destination: { screen: 'Comptes' } },
+      },
+    ]);
+  });
+
   it('plans and cancels the monthly review independently of the reminder', async () => {
     const scheduler = createInMemoryScheduler({ granted: true });
     await setNotificationSetting(service.dataService, scheduler, 'checkReminderEnabled', true);

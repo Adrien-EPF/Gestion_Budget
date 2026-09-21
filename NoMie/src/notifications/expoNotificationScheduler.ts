@@ -1,6 +1,11 @@
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import type { NotificationScheduler, NotificationSpec, NotificationTrigger } from './scheduler';
+import type {
+  NotificationDestination,
+  NotificationScheduler,
+  NotificationSpec,
+  NotificationTrigger,
+} from './scheduler';
 
 const CHANNEL_ID = 'default';
 const { SchedulableTriggerInputTypes } = Notifications;
@@ -20,6 +25,13 @@ function fromExpoTrigger(trigger: unknown): NotificationTrigger | null {
     return { type: 'monthly', day: t.day as number, hour: t.hour as number, minute: t.minute as number };
   }
   return null;
+}
+
+let lastDeliveredTap: string | null = null;
+
+function destinationOf(data: unknown): NotificationDestination | null {
+  const screen = (data as NotificationSpec['data'])?.destination?.screen;
+  return screen === 'Comptes' || screen === 'Budgets' ? { screen } : null;
 }
 
 /** Local notifications through `expo-notifications`; no server involved (ADR 0001). */
@@ -80,6 +92,24 @@ export function createExpoNotificationScheduler(): NotificationScheduler {
         });
       }
       return specs;
+    },
+    onNotificationTap(listener) {
+      const deliver = (response: Notifications.NotificationResponse) => {
+        if (response.actionIdentifier !== Notifications.DEFAULT_ACTION_IDENTIFIER) return;
+        const destination = destinationOf(response.notification.request.content.data);
+        // The same tap can come from both the listener and the launch response.
+        const key = `${response.notification.request.identifier}@${response.notification.date}`;
+        if (!destination || key === lastDeliveredTap) return;
+        lastDeliveredTap = key;
+        listener(destination);
+      };
+
+      // Tapped while the app was closed: expo keeps that response for us.
+      const launchResponse = Notifications.getLastNotificationResponse();
+      if (launchResponse) deliver(launchResponse);
+
+      const subscription = Notifications.addNotificationResponseReceivedListener(deliver);
+      return () => subscription.remove();
     },
   };
 }

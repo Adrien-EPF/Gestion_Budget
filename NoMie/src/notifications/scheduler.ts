@@ -31,4 +31,11 @@ export interface NotificationScheduler {
   schedule(spec: NotificationSpec): Promise<void>;
   cancel(id: string): Promise<void>;
   listScheduled(): Promise<NotificationSpec[]>;
+  /**
+   * Calls `listener` with the destination of every notification the user
+   * taps, whether the app was closed, in the background or open. A tap that
+   * launched the app is delivered as soon as a listener subscribes.
+   * Returns the unsubscribe function.
+   */
+  onNotificationTap(listener: (destination: NotificationDestination) => void): () => void;
 }

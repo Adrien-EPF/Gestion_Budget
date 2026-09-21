@@ -56,7 +56,14 @@ export async function typeInto(element: Element, text: string) {
  * unless a test passes its own. Pass `reopenOn` to start the app again on a database a previous render
  * left behind — what a relaunch of the real app does. Its owner closes it.
  */
-export async function renderApp(options: { reopenOn?: SqlDatabase; scheduler?: InMemoryScheduler } = {}) {
+export async function renderApp(
+  options: {
+    reopenOn?: SqlDatabase;
+    scheduler?: InMemoryScheduler;
+    /** Text that shows the first screen has painted; Accueil's unless the app opens elsewhere. */
+    firstScreenText?: string;
+  } = {}
+) {
   let db: SqlDatabase;
   let dataService;
   let close: () => Promise<void>;
@@ -77,7 +84,7 @@ export async function renderApp(options: { reopenOn?: SqlDatabase; scheduler?: I
     </DataServiceProvider>
   );
   // Accueil reads asynchronously; wait for its first paint so tests start from a settled screen.
-  await screen.findByText('Solde réel · tous comptes');
+  await screen.findByText(options.firstScreenText ?? 'Solde réel · tous comptes');
   return {
     ...utils,
     dataService,
