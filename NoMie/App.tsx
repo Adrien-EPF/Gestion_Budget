@@ -2,6 +2,9 @@ import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { Platform, View } from 'react-native';
+import { FileSharerProvider } from './src/files/FileSharerContext';
+import type { FileSharer } from './src/files/fileSharer';
+import { createWebFileSharer } from './src/files/webFileSharer';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { createInertScheduler } from './src/notifications/inMemoryScheduler';
 import { NotificationSchedulerProvider } from './src/notifications/NotificationSchedulerContext';
@@ -20,6 +23,12 @@ const scheduler: NotificationScheduler =
     ? createInertScheduler()
     : require('./src/notifications/expoNotificationScheduler').createExpoNotificationScheduler();
 
+/** File sharing/picking is a browser download + `<input>` on the web target (#12 « Implementation Decisions »). */
+const fileSharer: FileSharer =
+  Platform.OS === 'web'
+    ? createWebFileSharer()
+    : require('./src/files/expoFileSharer').createExpoFileSharer();
+
 export default function App() {
   const fontsLoaded = useAppFonts();
 
@@ -30,7 +39,9 @@ export default function App() {
   return (
     <AppDataServiceProvider>
       <NotificationSchedulerProvider scheduler={scheduler}>
-        <RootNavigator />
+        <FileSharerProvider fileSharer={fileSharer}>
+          <RootNavigator />
+        </FileSharerProvider>
       </NotificationSchedulerProvider>
       <StatusBar style="dark" />
     </AppDataServiceProvider>

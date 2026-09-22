@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
 import type { SqlDatabase } from '../db/types';
+import { createInMemoryFileSharer, type InMemoryFileSharer } from '../files/inMemoryFileSharer';
+import { FileSharerProvider } from '../files/FileSharerContext';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { createInMemoryScheduler, type InMemoryScheduler } from '../notifications/inMemoryScheduler';
 import { NotificationSchedulerProvider } from '../notifications/NotificationSchedulerContext';
@@ -60,6 +62,7 @@ export async function renderApp(
   options: {
     reopenOn?: SqlDatabase;
     scheduler?: InMemoryScheduler;
+    fileSharer?: InMemoryFileSharer;
     /** Text that shows the first screen has painted; Accueil's unless the app opens elsewhere. */
     firstScreenText?: string;
   } = {}
@@ -68,6 +71,7 @@ export async function renderApp(
   let dataService;
   let close: () => Promise<void>;
   const scheduler = options.scheduler ?? createInMemoryScheduler({ granted: true });
+  const fileSharer = options.fileSharer ?? createInMemoryFileSharer();
   if (options.reopenOn) {
     db = options.reopenOn;
     dataService = createDataService(db);
@@ -79,7 +83,9 @@ export async function renderApp(
   const utils = render(
     <DataServiceProvider dataService={dataService}>
       <NotificationSchedulerProvider scheduler={scheduler}>
-        <RootNavigator />
+        <FileSharerProvider fileSharer={fileSharer}>
+          <RootNavigator />
+        </FileSharerProvider>
       </NotificationSchedulerProvider>
     </DataServiceProvider>
   );
@@ -90,6 +96,7 @@ export async function renderApp(
     dataService,
     db,
     scheduler,
+    fileSharer,
     teardown: async () => {
       await settle();
       cleanup();

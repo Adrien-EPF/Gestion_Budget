@@ -1,3 +1,17 @@
+import {
+  BACKUP_FORMAT_ID,
+  BACKUP_FORMAT_VERSION,
+  parseBackupFile,
+  type BackupAccountRow,
+  type BackupBudgetRow,
+  type BackupCategoryRow,
+  type BackupFile,
+  type BackupRecurrenceRuleRow,
+  type BackupSettingRow,
+  type BackupSplitRow,
+  type BackupTransactionRow,
+} from '../backup/backupFormat';
+import { buildCsv, csvBool, formatCsvAmount } from '../backup/csv';
 import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY_NAME } from '../data/defaultCategories';
 import { COLUMN_MIGRATIONS, SCHEMA_SQL } from '../db/schema';
 import type { SqlDatabase } from '../db/types';
@@ -8,6 +22,8 @@ import {
   occurrencesBetween,
   type RecurrenceFrequency,
 } from '../utils/recurrence';
+import { FREQUENCY_LABELS } from '../utils/recurrenceCopy';
+import { STATUS_LABELS } from '../utils/statusCopy';
 
 export type { RecurrenceFrequency };
 
@@ -304,6 +320,11 @@ interface SplitRow {
   category_id: number | null;
   amount: number;
   advanced: number;
+}
+
+interface FullSplitRow extends SplitRow {
+  id: number;
+  transaction_id: number;
 }
 
 interface BudgetRow {
@@ -1207,6 +1228,228 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     notifyChange();
   }
 
+  /**
+   * Everything needed to restore NoMie to the identical state elsewhere
+   * (#12 story 2): every table, ids kept as-is so links stay valid.
+   */
+  async function createBackup(): Promise<BackupFile> {
+    const [accounts, categories, transactions, transactionSplits, budgets, recurrenceRules, settings] =
+      await Promise.all([
+        db.getAllAsync<BackupAccountRow>('SELECT * FROM accounts'),
+        db.getAllAsync<BackupCategoryRow>('SELECT * FROM categories'),
+        db.getAllAsync<BackupTransactionRow>('SELECT * FROM transactions'),
+        db.getAllAsync<BackupSplitRow>('SELECT * FROM transaction_splits'),
+        db.getAllAsync<BackupBudgetRow>('SELECT * FROM budgets'),
+        db.getAllAsync<BackupRecurrenceRuleRow>('SELECT * FROM recurrence_rules'),
+        db.getAllAsync<BackupSettingRow>('SELECT * FROM settings'),
+      ]);
+    return {
+      format: BACKUP_FORMAT_ID,
+      version: BACKUP_FORMAT_VERSION,
+      createdAt: now().toISOString(),
+      data: { accounts, categories, transactions, transactionSplits, budgets, recurrenceRules, settings },
+    };
+  }
+
+  /**
+   * Import = full replacement (#12 « Implementation Decisions »): the file
+   * is fully validated before anything is written, then every table is
+   * replaced in one atomic transaction — the existing database is
+   * untouched if validation fails, and rolled back if a write does.
+   */
+  async function restoreBackup(fileContent: string): Promise<void> {
+    const result = parseBackupFile(fileContent);
+    if (!result.ok) throw new Error(result.reason);
+    const { data } = result.file;
+
+    await db.transactionAsync(async () => {
+      await db.runAsync('DELETE FROM transaction_splits');
+      await db.runAsync('DELETE FROM transactions');
+      await db.runAsync('DELETE FROM budgets');
+      await db.runAsync('DELETE FROM recurrence_rules');
+      await db.runAsync('DELETE FROM categories');
+      await db.runAsync('DELETE FROM accounts');
+      await db.runAsync('DELETE FROM settings');
+
+      for (const row of data.accounts) {
+        await db.runAsync(
+          'INSERT INTO accounts (id, name, initial_balance, created_at, archived) VALUES (?, ?, ?, ?, ?)',
+          [row.id, row.name, row.initial_balance, row.created_at, row.archived]
+        );
+      }
+      for (const row of data.categories) {
+        await db.runAsync(
+          'INSERT INTO categories (id, name, kind, icon, color, hidden, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [row.id, row.name, row.kind, row.icon, row.color, row.hidden, row.sort_order]
+        );
+      }
+      for (const row of data.transactions) {
+        await db.runAsync(
+          `INSERT INTO transactions
+             (id, account_id, operation_date, bank_date, comment, amount, category_id, status, mirror_transaction_id, recurrence_rule_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            row.id,
+            row.account_id,
+            row.operation_date,
+            row.bank_date,
+            row.comment,
+            row.amount,
+            row.category_id,
+            row.status,
+            row.mirror_transaction_id,
+            row.recurrence_rule_id,
+          ]
+        );
+      }
+      for (const row of data.transactionSplits) {
+        await db.runAsync(
+          'INSERT INTO transaction_splits (id, transaction_id, category_id, amount, advanced) VALUES (?, ?, ?, ?, ?)',
+          [row.id, row.transaction_id, row.category_id, row.amount, row.advanced]
+        );
+      }
+      for (const row of data.budgets) {
+        await db.runAsync(
+          'INSERT INTO budgets (id, category_id, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?, ?)',
+          [row.id, row.category_id, row.amount, row.period, row.carry_over, row.start_month]
+        );
+      }
+      for (const row of data.recurrenceRules) {
+        await db.runAsync(
+          `INSERT INTO recurrence_rules
+             (id, name, account_id, amount, category_id, frequency, reference_date, automatic, active, end_date, generated_until)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            row.id,
+            row.name,
+            row.account_id,
+            row.amount,
+            row.category_id,
+            row.frequency,
+            row.reference_date,
+            row.automatic,
+            row.active,
+            row.end_date,
+            row.generated_until,
+          ]
+        );
+      }
+      for (const row of data.settings) {
+        await db.runAsync('INSERT INTO settings (key, value) VALUES (?, ?)', [row.key, row.value]);
+      }
+    });
+    notifyChange();
+  }
+
+  /**
+   * One CSV per table, columns made readable — names instead of ids,
+   * French labels and formats (#12 stories 8-9). Not meant to be
+   * reimported: the technical backup covers that (`createBackup`).
+   */
+  async function exportCsv(): Promise<{ filename: string; content: string }[]> {
+    const [accounts, categories, transactions, splits, budgetRows, ruleRows] = await Promise.all([
+      listAccounts(),
+      listCategories(),
+      db.getAllAsync<TransactionRow>('SELECT * FROM transactions ORDER BY id ASC'),
+      db.getAllAsync<FullSplitRow>('SELECT * FROM transaction_splits ORDER BY id ASC'),
+      db.getAllAsync<BudgetRow>(
+        'SELECT b.*, c.name AS category_name FROM budgets b JOIN categories c ON c.id = b.category_id ORDER BY b.id ASC'
+      ),
+      db.getAllAsync<RecurrenceRuleListRow>(`${RULE_LIST_SELECT} ORDER BY r.id ASC`),
+    ]);
+
+    const accountName = new Map(accounts.map((a) => [a.id, a.name]));
+    const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+
+    const accountsCsv = buildCsv(
+      ['Id', 'Nom', 'Solde initial', 'Créé le', 'Archivé'],
+      accounts.map((a) => [
+        String(a.id),
+        a.name,
+        formatCsvAmount(a.initialBalance),
+        a.createdAt.slice(0, 10),
+        csvBool(a.archived),
+      ])
+    );
+
+    const categoriesCsv = buildCsv(
+      ['Id', 'Nom', 'Type', 'Couleur', 'Masquée', 'Ordre'],
+      categories.map((c) => [String(c.id), c.name, c.kind, c.color ?? '', csvBool(c.hidden), String(c.order)])
+    );
+
+    const transactionsCsv = buildCsv(
+      ['Id', 'Compte', 'Date opération', 'Date banque', 'Commentaire', 'Montant', 'Catégorie', 'Statut'],
+      transactions.map((t) => [
+        String(t.id),
+        accountName.get(t.account_id) ?? '',
+        t.operation_date,
+        t.bank_date ?? '',
+        t.comment,
+        formatCsvAmount(t.amount),
+        t.category_id !== null ? (categoryName.get(t.category_id) ?? '') : '',
+        STATUS_LABELS[t.status],
+      ])
+    );
+
+    const splitsCsv = buildCsv(
+      ['Id', 'Opération', 'Catégorie', 'Montant', 'Avancé'],
+      splits.map((s) => [
+        String(s.id),
+        String(s.transaction_id),
+        s.category_id !== null ? (categoryName.get(s.category_id) ?? '') : '',
+        formatCsvAmount(s.amount),
+        csvBool(s.advanced === 1),
+      ])
+    );
+
+    const budgetsCsv = buildCsv(
+      ['Id', 'Catégorie', 'Montant', 'Report', 'Premier mois'],
+      budgetRows.map((b) => [
+        String(b.id),
+        b.category_name,
+        formatCsvAmount(b.amount),
+        csvBool(b.carry_over === 1),
+        b.start_month,
+      ])
+    );
+
+    const recurrenceCsv = buildCsv(
+      [
+        'Id',
+        'Nom',
+        'Compte',
+        'Montant',
+        'Catégorie',
+        'Fréquence',
+        'Date de référence',
+        'Automatique',
+        'Active',
+        'Date de fin',
+      ],
+      ruleRows.map((r) => [
+        String(r.id),
+        r.name,
+        r.account_name,
+        formatCsvAmount(r.amount),
+        r.category_name ?? '',
+        FREQUENCY_LABELS[r.frequency],
+        r.reference_date,
+        csvBool(r.automatic === 1),
+        csvBool(r.active === 1),
+        r.end_date ?? '',
+      ])
+    );
+
+    return [
+      { filename: 'transactions.csv', content: transactionsCsv },
+      { filename: 'splits.csv', content: splitsCsv },
+      { filename: 'comptes.csv', content: accountsCsv },
+      { filename: 'categories.csv', content: categoriesCsv },
+      { filename: 'budgets.csv', content: budgetsCsv },
+      { filename: 'recurrences.csv', content: recurrenceCsv },
+    ];
+  }
+
   /** The counts shown under the STRUCTURE links of Réglages. */
   async function getStructureSummary(): Promise<StructureSummary> {
     const accounts = await db.getFirstAsync<{ active: number | null; archived: number | null }>(
@@ -1260,6 +1503,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     getSettings,
     setSetting,
     getStructureSummary,
+    createBackup,
+    restoreBackup,
+    exportCsv,
   };
 }
 

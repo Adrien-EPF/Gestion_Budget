@@ -2,13 +2,9 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { TransactionStatus } from '../services/dataService';
 import { colors, rounded, textStyle } from '../theme/tokens';
+import { STATUS_LABELS } from '../utils/statusCopy';
 
-export const STATUS_LABELS: Record<TransactionStatus, string> = {
-  non_pointe: 'Non pointé',
-  pointe: 'Pointé',
-  prevision: 'Prévision',
-  flux_comptable: 'Flux comptable',
-};
+export { STATUS_LABELS };
 
 const STATUS_COLORS: Record<TransactionStatus, { fg: string; bg: string }> = {
   non_pointe: { fg: colors.statusNonPointe, bg: colors.statusNonPointeSoft },

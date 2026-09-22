@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text } from 'react-native';
+import { buildCsvZipBase64 } from '../backup/zip';
+import { ImportBackupSheet } from '../components/ImportBackupSheet';
 import { Screen } from '../components/Screen';
 import { LinkRow, SettingsGroup, SwitchRow } from '../components/SettingsGroup';
+import { useFileSharer } from '../files/FileSharerContext';
+import type { PickedFile } from '../files/fileSharer';
 import type { TabScreenProps } from '../navigation/types';
 import { DevNotificationTest } from '../notifications/DevNotificationTest';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
@@ -9,6 +13,7 @@ import { isNotificationSetting, setNotificationSetting } from '../notifications/
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import type { SettingKey } from '../services/dataService';
 import { colors, spacing, textStyle } from '../theme/tokens';
+import { toIsoDate } from '../utils/dates';
 import { describeAccounts, describeAdvances, describeCategories } from '../utils/settingsCopy';
 
 /**
@@ -19,8 +24,10 @@ import { describeAccounts, describeAdvances, describeCategories } from '../utils
 export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
   const dataService = useDataService();
   const scheduler = useNotificationScheduler();
+  const fileSharer = useFileSharer();
   const settings = useServiceQuery((s) => s.getSettings());
   const structure = useServiceQuery((s) => s.getStructureSummary());
+  const [pendingImport, setPendingImport] = useState<PickedFile | null>(null);
 
   if (!settings || !structure) return <Screen title="Réglages">{null}</Screen>;
 
@@ -31,6 +38,33 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
         ? setNotificationSetting(dataService, scheduler, key, value)
         : dataService.setSetting(key, value),
   });
+
+  const datedFilename = (prefix: string, extension: string) =>
+    `${prefix}-${toIsoDate(new Date())}.${extension}`;
+
+  const backupComplete = async () => {
+    const backup = await dataService.createBackup();
+    await fileSharer.share({
+      filename: datedFilename('nomie-sauvegarde', 'json'),
+      content: JSON.stringify(backup),
+      mimeType: 'application/json',
+    });
+  };
+
+  const exportCsv = async () => {
+    const files = await dataService.exportCsv();
+    await fileSharer.share({
+      filename: datedFilename('nomie-export', 'zip'),
+      content: buildCsvZipBase64(files),
+      base64: true,
+      mimeType: 'application/zip',
+    });
+  };
+
+  const importBackup = async () => {
+    const picked = await fileSharer.pickFile();
+    if (picked) setPendingImport(picked);
+  };
 
   return (
     <Screen title="Réglages">
@@ -71,9 +105,13 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
           title="Données"
           note="Tout reste sur ton téléphone. Une sauvegarde de temps en temps évite les mauvaises surprises."
         >
-          <LinkRow label="Sauvegarde complète" hint="Fichier réimportable" />
-          <LinkRow label="Export Excel/CSV" hint="Lisible hors app" />
-          <LinkRow label="Importer une sauvegarde" hint="Remplace les données de l’appareil" />
+          <LinkRow label="Sauvegarde complète" hint="Fichier réimportable" onPress={backupComplete} />
+          <LinkRow label="Export Excel/CSV" hint="Lisible hors app" onPress={exportCsv} />
+          <LinkRow
+            label="Importer une sauvegarde"
+            hint="Remplace les données de l’appareil"
+            onPress={importBackup}
+          />
         </SettingsGroup>
 
         <SettingsGroup title="Saisie">
@@ -84,6 +122,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
           NoMie · version alpha · données stockées sur cet appareil
         </Text>
       </ScrollView>
+      <ImportBackupSheet file={pendingImport} onClose={() => setPendingImport(null)} />
     </Screen>
   );
 }

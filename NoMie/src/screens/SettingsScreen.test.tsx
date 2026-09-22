@@ -1,6 +1,7 @@
 import { act, cleanup, screen } from '@testing-library/react-native';
 import { createInMemoryScheduler } from '../notifications/inMemoryScheduler';
 import type { SettingKey } from '../services/dataService';
+import { createTestDataService } from '../test-utils/createTestDataService';
 import { formatAmount } from '../utils/formatAmount';
 import { plain, press, renderApp, settle } from '../test-utils/renderWithApp';
 
@@ -206,7 +207,7 @@ describe('Écran Réglages', () => {
       expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
     });
 
-    it.each(['Catégories', 'Avances en attente', 'Sauvegarde complète', 'Export Excel/CSV', 'Importer une sauvegarde'])(
+    it.each(['Catégories', 'Avances en attente'])(
       'shows %s without a destination yet: inert, and Réglages stays open',
       async (label) => {
         await openSettings();
@@ -218,5 +219,98 @@ describe('Écran Réglages', () => {
         expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
       }
     );
+  });
+
+  describe('données', () => {
+    const todayIso = () => new Date().toISOString().slice(0, 10);
+
+    it('creates and shares a dated backup file from « Sauvegarde complète »', async () => {
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Sauvegarde complète' }));
+      await settle();
+
+      expect(app.fileSharer.shared).toHaveLength(1);
+      const [file] = app.fileSharer.shared;
+      expect(file.filename).toBe(`nomie-sauvegarde-${todayIso()}.json`);
+      expect(file.mimeType).toBe('application/json');
+      expect(JSON.parse(file.content)).toMatchObject({ format: 'nomie-backup', version: 1 });
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
+    });
+
+    it('bundles a dated CSV archive and shares it from « Export Excel/CSV »', async () => {
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Export Excel/CSV' }));
+      await settle();
+
+      expect(app.fileSharer.shared).toHaveLength(1);
+      const [file] = app.fileSharer.shared;
+      expect(file.filename).toBe(`nomie-export-${todayIso()}.zip`);
+      expect(file.mimeType).toBe('application/zip');
+      expect(file.base64).toBe(true);
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
+    });
+
+    it('does nothing when the file picker is cancelled on import', async () => {
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Importer une sauvegarde' }));
+      await settle();
+
+      expect(screen.queryByText('Remplacer les données de l’appareil ?')).toBeNull();
+    });
+
+    it('asks for confirmation before importing, and changes nothing if cancelled', async () => {
+      const backup = await app.dataService.createBackup();
+      await app.dataService.createAccount({ name: 'Compte courant', initialBalance: 100 });
+      app.fileSharer.queuePick({ name: 'ma-sauvegarde.json', content: JSON.stringify(backup) });
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Importer une sauvegarde' }));
+      expect(await screen.findByText('Remplacer les données de l’appareil ?')).toBeTruthy();
+      expect(screen.getByText(/ma-sauvegarde\.json/)).toBeTruthy();
+
+      await press(screen.getByRole('button', { name: 'Annuler' }));
+
+      expect(screen.queryByText('Remplacer les données de l’appareil ?')).toBeNull();
+      expect(await app.dataService.listAccounts()).toHaveLength(1);
+    });
+
+    it('replaces the device data and refreshes the screen after a confirmed import', async () => {
+      const source = await createTestDataService();
+      await source.dataService.createAccount({ name: 'Compte importé', initialBalance: 42 });
+      const backup = await source.dataService.createBackup();
+      await source.close();
+
+      app.fileSharer.queuePick({ name: 'ma-sauvegarde.json', content: JSON.stringify(backup) });
+      await openSettings();
+      await press(screen.getByRole('button', { name: 'Importer une sauvegarde' }));
+      await screen.findByText('Remplacer les données de l’appareil ?');
+
+      await press(screen.getByRole('button', { name: 'Importer' }));
+      await settle();
+
+      expect(screen.queryByText('Remplacer les données de l’appareil ?')).toBeNull();
+      const accounts = await app.dataService.listAccounts();
+      expect(accounts.map((a) => a.name)).toEqual(['Compte importé']);
+      expect(screen.getByText('1 actif')).toBeTruthy();
+    });
+
+    it('refuses an invalid file, changes nothing, and lets the user close the message', async () => {
+      await app.dataService.createAccount({ name: 'Compte courant', initialBalance: 100 });
+      app.fileSharer.queuePick({ name: 'pas-une-sauvegarde.txt', content: 'ceci n’est pas du JSON' });
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Importer une sauvegarde' }));
+      await screen.findByText('Remplacer les données de l’appareil ?');
+      await press(screen.getByRole('button', { name: 'Importer' }));
+
+      expect(await screen.findByText('Import impossible')).toBeTruthy();
+      expect(await app.dataService.listAccounts()).toHaveLength(1);
+
+      await press(screen.getByRole('button', { name: 'Fermer le message d’erreur' }));
+      expect(screen.queryByText('Import impossible')).toBeNull();
+    });
   });
 });
