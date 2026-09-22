@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { Platform, View } from 'react-native';
@@ -9,9 +10,13 @@ import { AppDataServiceProvider } from './src/services/AppDataServiceProvider';
 import { colors } from './src/theme/tokens';
 import { useAppFonts } from './src/theme/useAppFonts';
 
-/** Local notifications are not available on the web target: the scheduler is inert there. */
+/**
+ * Local notifications need a dev/standalone build: the scheduler is inert on
+ * the web target and, for now, in Expo Go too (used to test the rest of the
+ * app while the notification feature is on hold).
+ */
 const scheduler: NotificationScheduler =
-  Platform.OS === 'web'
+  Platform.OS === 'web' || Constants.expoGoConfig !== null
     ? createInertScheduler()
     : require('./src/notifications/expoNotificationScheduler').createExpoNotificationScheduler();
 
