@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet, Text } from 'react-native';
 import { Screen } from '../components/Screen';
 import { LinkRow, SettingsGroup, SwitchRow } from '../components/SettingsGroup';
 import type { TabScreenProps } from '../navigation/types';
+import { DevNotificationTest } from '../notifications/DevNotificationTest';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
 import { isNotificationSetting, setNotificationSetting } from '../notifications/reconcile';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
@@ -63,6 +64,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
             hint="Un résumé factuel le 1er du mois"
             {...switchProps('monthlyBudgetReviewEnabled')}
           />
+          <DevNotificationTest />
         </SettingsGroup>
 
         <SettingsGroup
