@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AdvancesCard } from '../components/AdvancesCard';
 import { BudgetCard } from '../components/BudgetCard';
@@ -13,6 +13,7 @@ import { useDataService, useServiceQuery } from '../services/DataServiceContext'
 import { colors, rounded, spacing, textStyle } from '../theme/tokens';
 import { dayOfMonth } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
+import { YearReportScreen } from './YearReportScreen';
 
 const BUDGET_PREVIEW_COUNT = 3;
 
@@ -20,6 +21,7 @@ const BUDGET_PREVIEW_COUNT = 3;
 export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const dataService = useDataService();
   const { year, month } = useMonth();
+  const [yearReportOpen, setYearReportOpen] = useState(false);
 
   const totals = useServiceQuery((s) => s.getBalanceTotals());
   const toPointCount = useServiceQuery((s) => s.countToPoint());
@@ -104,9 +106,17 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
       )}
 
       <View style={styles.section}>
-        <Text style={[textStyle('headingMd'), styles.sectionTitle]}>
-          {isCurrentMonth ? 'Ce mois-ci' : formatMonthLabel(year, month)}
-        </Text>
+        <View style={styles.sectionHeader}>
+          <Text style={[textStyle('headingMd'), styles.sectionTitle]}>
+            {isCurrentMonth ? 'Ce mois-ci' : formatMonthLabel(year, month)}
+          </Text>
+          <Button
+            label="Bilan annuel"
+            variant="ghost"
+            onPress={() => setYearReportOpen(true)}
+            style={styles.seeAll}
+          />
+        </View>
         <View style={styles.monthCard}>
           <View style={styles.monthColumn}>
             <Text style={[textStyle('caption'), styles.monthLabel]}>Dépenses</Text>
@@ -191,6 +201,10 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
           </View>
         )}
       />
+      {/* Mounted only while open, so it starts again on Accueil's year each time. */}
+      {yearReportOpen ? (
+        <YearReportScreen initialYear={year} onClose={() => setYearReportOpen(false)} />
+      ) : null}
     </Screen>
   );
 }

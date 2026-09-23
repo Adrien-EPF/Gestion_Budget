@@ -1,0 +1,102 @@
+import { act, screen, within } from '@testing-library/react-native';
+import type { DataService } from '../services/dataService';
+import { formatAmount } from '../utils/formatAmount';
+import { plain, press, renderApp } from '../test-utils/renderWithApp';
+
+const year = new Date().getFullYear();
+
+async function openYearReport() {
+  await press(screen.getByRole('button', { name: 'Bilan annuel' }));
+  await screen.findByTestId('year-report-title');
+}
+
+describe('Écran Bilan annuel (#25)', () => {
+  let app: Awaited<ReturnType<typeof renderApp>>;
+  let accountId: number;
+  const cat: Record<string, number> = {};
+
+  beforeEach(async () => {
+    app = await renderApp();
+    await act(async () => {
+      accountId = (await app.dataService.createAccount({ name: 'Compte courant', initialBalance: 1000 })).id;
+      for (const category of await app.dataService.listCategories()) cat[category.name] = category.id;
+    });
+  });
+
+  afterEach(() => app.teardown());
+
+  const record = (category: string, amount: number, date: string, dataService: DataService = app.dataService) =>
+    act(async () => {
+      await dataService.createTransaction({
+        accountId,
+        operationDate: date,
+        amount,
+        categoryId: cat[category],
+        status: 'pointe',
+      });
+    });
+
+  it('opens from Accueil on the year being viewed, and closes back to it', async () => {
+    await openYearReport();
+
+    expect(screen.getByTestId('year-report-year').props.children).toBe(String(year));
+
+    await press(screen.getByLabelText('Fermer'));
+    expect(screen.queryByTestId('year-report-title')).toBeNull();
+    expect(screen.getByText('Solde réel · tous comptes')).toBeTruthy();
+  });
+
+  it('opens on the year of the month chosen on Accueil', async () => {
+    for (let i = 0; i <= new Date().getMonth(); i++) {
+      await press(screen.getByLabelText('Mois précédent'));
+    }
+    await openYearReport();
+
+    expect(screen.getByTestId('year-report-year').props.children).toBe(String(year - 1));
+  });
+
+  it('details expenses and income by category and month, with their annual total', async () => {
+    await record('Restaurant', -30, `${year}-01-12`);
+    await record('Restaurant', -12.5, `${year}-03-02`);
+    await record('Salaire/Intérêts/Avantages', 2000, `${year}-01-28`);
+    await openYearReport();
+
+    const restaurant = within(screen.getByTestId('year-expenses-row-Restaurant'));
+    expect(restaurant.getByText('Restaurant')).toBeTruthy();
+    expect(restaurant.getByText(plain(formatAmount(30)))).toBeTruthy();
+    expect(restaurant.getByText(plain(formatAmount(12.5)))).toBeTruthy();
+    expect(restaurant.getByText(plain(formatAmount(42.5)))).toBeTruthy();
+
+    const salary = within(screen.getByTestId('year-income-row-Salaire/Intérêts/Avantages'));
+    expect(salary.getAllByText(plain(formatAmount(2000)))).toHaveLength(2);
+    expect(screen.queryByTestId('year-income-row-Restaurant')).toBeNull();
+  });
+
+  it('shows operation counts per account and end-of-month balances', async () => {
+    await record('Restaurant', -40, `${year}-01-10`);
+    await record('Restaurant', -10, `${year}-01-20`);
+    await openYearReport();
+
+    const counts = within(screen.getByTestId('year-counts-row-Compte courant'));
+    expect(counts.getAllByText('2')).toHaveLength(2); // January and the annual total
+
+    const real = within(screen.getByTestId('year-balances-row-Compte courant-real'));
+    expect(real.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
+    const pointed = within(screen.getByTestId('year-balances-row-Compte courant-pointed'));
+    expect(pointed.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
+  });
+
+  it('switches year with the selector', async () => {
+    await record('Restaurant', -30, `${year - 1}-06-12`);
+    await openYearReport();
+    expect(screen.getByText('Aucune dépense cette année.')).toBeTruthy();
+
+    await press(screen.getByLabelText('Année précédente'));
+
+    expect(screen.getByTestId('year-report-year').props.children).toBe(String(year - 1));
+    expect(screen.getByTestId('year-expenses-row-Restaurant')).toBeTruthy();
+
+    await press(screen.getByLabelText('Année suivante'));
+    expect(screen.getByTestId('year-report-year').props.children).toBe(String(year));
+  });
+});

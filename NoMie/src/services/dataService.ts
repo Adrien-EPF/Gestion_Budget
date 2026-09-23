@@ -302,6 +302,30 @@ export interface MonthSummary {
   firstForecast: { comment: string; operationDate: string } | null;
 }
 
+/** One category's line of the Bilan annuel (#25). Month arrays are indexed 0-11, like `MonthRef.month`. */
+export interface CategoryYearFlow {
+  categoryId: number | null;
+  categoryName: string | null;
+  expenses: number[];
+  income: number[];
+  totalExpenses: number;
+  totalIncome: number;
+}
+
+/** How many operations one account had each month of the Bilan annuel's year (#25). */
+export interface AccountYearCounts {
+  account: Account;
+  counts: number[];
+  total: number;
+}
+
+/** One account's balances at the end of each month of the Bilan annuel's year (#25). */
+export interface AccountYearBalances {
+  account: Account;
+  pointed: number[];
+  real: number[];
+}
+
 interface CategoryRow {
   id: number;
   name: string;
@@ -532,6 +556,11 @@ function monthBounds({ year, month }: MonthRef): [string, string] {
   const start = `${year}-${pad(month + 1)}-01`;
   const end = month === 11 ? `${year + 1}-01-01` : `${year}-${pad(month + 2)}-01`;
   return [start, end];
+}
+
+/** `[1 January, 1 January of next year)` as ISO dates, like `monthBounds` for a whole year. */
+function yearBounds(year: number): [string, string] {
+  return [`${year}-01-01`, `${year + 1}-01-01`];
 }
 
 const LIST_SELECT = `
@@ -961,6 +990,168 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
         ? { comment: forecasts[0].comment, operationDate: forecasts[0].operation_date }
         : null,
     };
+  }
+
+  /**
+   * Dépenses / recettes of `year`, per category and per month (#25) — the
+   * Bilan sheet of the old Excel. Real activity only, like the month
+   * summary, but on every account: archiving an account later doesn't
+   * rewrite the past years' Bilan. A split transaction counts through
+   * its portions' categories, an unsplit one through its own. Categories
+   * without activity that year are left out; operations without a
+   * category come last, under a `null` name.
+   */
+  async function getCategoryFlowsByMonth(year: number): Promise<CategoryYearFlow[]> {
+    const activity = `t.status IN ('non_pointe', 'pointe')
+                      AND t.operation_date >= ? AND t.operation_date < ?`;
+    const range = yearBounds(year);
+    const rows = await db.getAllAsync<{
+      category_id: number | null;
+      category_name: string | null;
+      month: string;
+      expenses: number | null;
+      income: number | null;
+    }>(
+      `SELECT p.category_id, c.name AS category_name, p.month,
+         SUM(CASE WHEN p.amount < 0 THEN -p.amount END) AS expenses,
+         SUM(CASE WHEN p.amount > 0 THEN p.amount END) AS income
+       FROM (
+         SELECT t.category_id, substr(t.operation_date, 6, 2) AS month, t.amount
+         FROM transactions t
+         WHERE ${activity}
+           AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
+         UNION ALL
+         SELECT s.category_id, substr(t.operation_date, 6, 2) AS month, s.amount
+         FROM transaction_splits s
+         JOIN transactions t ON t.id = s.transaction_id
+         WHERE ${activity}
+       ) p
+       LEFT JOIN categories c ON c.id = p.category_id
+       GROUP BY p.category_id, p.month
+       ORDER BY c.sort_order IS NULL, c.sort_order ASC`,
+      [...range, ...range]
+    );
+
+    const flows = new Map<number | null, CategoryYearFlow>();
+    for (const row of rows) {
+      let flow = flows.get(row.category_id);
+      if (!flow) {
+        flow = {
+          categoryId: row.category_id,
+          categoryName: row.category_name,
+          expenses: Array<number>(12).fill(0),
+          income: Array<number>(12).fill(0),
+          totalExpenses: 0,
+          totalIncome: 0,
+        };
+        flows.set(row.category_id, flow);
+      }
+      const month = Number(row.month) - 1;
+      flow.expenses[month] = roundToCents(row.expenses ?? 0);
+      flow.income[month] = roundToCents(row.income ?? 0);
+    }
+    for (const flow of flows.values()) {
+      flow.totalExpenses = roundToCents(flow.expenses.reduce((sum, v) => sum + v, 0));
+      flow.totalIncome = roundToCents(flow.income.reduce((sum, v) => sum + v, 0));
+    }
+    return [...flows.values()];
+  }
+
+  /**
+   * Operations of `year` per account and per month (#25), every status —
+   * like `monthOperationCount` on Comptes. An archived account stays in
+   * the Bilan of the years it was used, and only those.
+   */
+  async function getOperationCountsByMonth(year: number): Promise<AccountYearCounts[]> {
+    const rows = await db.getAllAsync<AccountRow & { month: string | null; count: number }>(
+      `SELECT a.*, substr(t.operation_date, 6, 2) AS month, COUNT(t.id) AS count
+       FROM accounts a
+       LEFT JOIN transactions t ON t.account_id = a.id
+         AND t.operation_date >= ? AND t.operation_date < ?
+       GROUP BY a.id, month
+       ORDER BY a.created_at ASC, a.id ASC`,
+      yearBounds(year)
+    );
+
+    const byAccount = new Map<number, AccountYearCounts>();
+    for (const row of rows) {
+      let entry = byAccount.get(row.id);
+      if (!entry) {
+        entry = { account: toAccount(row), counts: Array<number>(12).fill(0), total: 0 };
+        byAccount.set(row.id, entry);
+      }
+      if (row.month !== null) {
+        entry.counts[Number(row.month) - 1] = row.count;
+        entry.total += row.count;
+      }
+    }
+    return [...byAccount.values()].filter((entry) => !entry.account.archived || entry.total > 0);
+  }
+
+  /**
+   * Each account's pointé and réel balances at the end of every month of
+   * `year` (#25), same rules as `listAccountSummaries` and the same
+   * accounts as `getOperationCountsByMonth`. SQL sums the history before
+   * the year and each month; only the 12-step running total is done here.
+   */
+  async function getBalanceSeries(year: number): Promise<AccountYearBalances[]> {
+    const [start, end] = yearBounds(year);
+    const rows = await db.getAllAsync<
+      AccountRow & { month: string | null; real: number | null; pointed: number | null; count: number }
+    >(
+      `SELECT a.*,
+         CASE WHEN t.operation_date < ? THEN NULL ELSE substr(t.operation_date, 6, 2) END AS month,
+         SUM(CASE WHEN t.status <> 'flux_comptable' THEN t.amount END) AS real,
+         SUM(CASE WHEN t.status = 'pointe' THEN t.amount END) AS pointed,
+         COUNT(t.id) AS count
+       FROM accounts a
+       LEFT JOIN transactions t ON t.account_id = a.id AND t.operation_date < ?
+       GROUP BY a.id, month
+       ORDER BY a.created_at ASC, a.id ASC`,
+      [start, end]
+    );
+
+    type Sums = { pointed: number; real: number };
+    const byAccount = new Map<
+      number,
+      { account: Account; opening: Sums; monthly: Sums[]; yearCount: number }
+    >();
+    for (const row of rows) {
+      let entry = byAccount.get(row.id);
+      if (!entry) {
+        entry = {
+          account: toAccount(row),
+          opening: { pointed: row.initial_balance, real: row.initial_balance },
+          monthly: Array.from({ length: 12 }, () => ({ pointed: 0, real: 0 })),
+          yearCount: 0,
+        };
+        byAccount.set(row.id, entry);
+      }
+      const sums: Sums = { pointed: row.pointed ?? 0, real: row.real ?? 0 };
+      if (row.month === null) {
+        entry.opening = {
+          pointed: entry.opening.pointed + sums.pointed,
+          real: entry.opening.real + sums.real,
+        };
+      } else {
+        entry.monthly[Number(row.month) - 1] = sums;
+        entry.yearCount += row.count;
+      }
+    }
+
+    return [...byAccount.values()]
+      .filter((entry) => !entry.account.archived || entry.yearCount > 0)
+      .map(({ account, opening, monthly }) => {
+        let { pointed, real } = opening;
+        const series: AccountYearBalances = { account, pointed: [], real: [] };
+        for (const month of monthly) {
+          pointed += month.pointed;
+          real += month.real;
+          series.pointed.push(roundToCents(pointed));
+          series.real.push(roundToCents(real));
+        }
+        return series;
+      });
   }
 
   /**
@@ -1603,6 +1794,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     listAccountSummaries,
     getBalanceTotals,
     getMonthSummary,
+    getCategoryFlowsByMonth,
+    getOperationCountsByMonth,
+    getBalanceSeries,
     getPendingAdvances,
     listPendingAdvances,
     markAdvanceReimbursed,
