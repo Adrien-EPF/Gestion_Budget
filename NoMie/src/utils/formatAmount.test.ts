@@ -32,4 +32,9 @@ describe('formatAmount', () => {
     expect(formatAmount(0.005)).toBe('0,01 €');
     expect(formatAmount(10.999)).toBe('11,00 €');
   });
+
+  it('drops the cents when asked, for round chart graduations', () => {
+    expect(formatAmount(4000, { whole: true })).toBe('4 000 €');
+    expect(formatAmount(-250, { whole: true })).toBe('−250 €');
+  });
 });

@@ -5,6 +5,8 @@ const MINUS = '−';
 interface FormatAmountOptions {
   /** Prefix income with `+` — used in lists, not on balances (handoff §4). */
   signed?: boolean;
+  /** No cents — the round graduations of a chart axis. */
+  whole?: boolean;
 }
 
 /**
@@ -18,7 +20,7 @@ interface FormatAmountOptions {
  *   formatAmount(2380, { signed: true })  -> "+2 380,00 €"
  */
 export function formatAmount(amount: number, options: FormatAmountOptions = {}): string {
-  const cents = Math.round(Math.abs(amount) * 100);
+  const cents = options.whole ? Math.round(Math.abs(amount)) * 100 : Math.round(Math.abs(amount) * 100);
   const integerPart = Math.floor(cents / 100)
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, NARROW_NBSP);
@@ -26,5 +28,5 @@ export function formatAmount(amount: number, options: FormatAmountOptions = {}):
 
   // A value that rounds to zero carries no sign: "−0,00 €" would be noise.
   const sign = cents === 0 ? '' : amount < 0 ? MINUS : options.signed ? '+' : '';
-  return `${sign}${integerPart},${decimalPart}${NBSP}€`;
+  return `${sign}${integerPart}${options.whole ? '' : `,${decimalPart}`}${NBSP}€`;
 }

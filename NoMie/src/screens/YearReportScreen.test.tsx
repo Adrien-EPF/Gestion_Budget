@@ -1,4 +1,5 @@
 import { act, screen, within } from '@testing-library/react-native';
+import { monthName } from '../navigation/formatMonthLabel';
 import type { DataService } from '../services/dataService';
 import { formatAmount } from '../utils/formatAmount';
 import { plain, press, renderApp } from '../test-utils/renderWithApp';
@@ -104,6 +105,26 @@ describe('Écran Bilan annuel (#25)', () => {
   });
 
 
+
+  it('charts each account’s balance and reads the current month under the chart (§6.7)', async () => {
+    let livretId = 0;
+    await act(async () => {
+      livretId = (await app.dataService.createAccount({ name: 'Livret', initialBalance: 500 })).id;
+    });
+    await record('Restaurant', -50, `${year}-01-10`);
+    await openYearReport();
+
+    const chart = within(screen.getByTestId('balance-chart'));
+    expect(chart.getByText(`Fin ${monthName(new Date().getMonth()).toLowerCase()}`)).toBeTruthy();
+    const courant = within(chart.getByTestId(`balance-chart-reading-${accountId}`));
+    expect(courant.getByText(plain(formatAmount(950)))).toBeTruthy();
+    expect(courant.getByText(`Pointé ${plain(formatAmount(950))}`)).toBeTruthy();
+
+    await press(chart.getByRole('button', { name: 'Livret' }));
+
+    expect(chart.queryByTestId(`balance-chart-reading-${accountId}`)).toBeNull();
+    expect(chart.getByTestId(`balance-chart-reading-${livretId}`)).toBeTruthy();
+  });
 
   it('switches year with the selector', async () => {
     await record('Restaurant', -30, `${year - 1}-06-12`);

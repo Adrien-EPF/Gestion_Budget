@@ -90,28 +90,64 @@ export function groupExpenses(series: CategorySeries[], topN = 7): ExpenseGroup[
   return groups;
 }
 
-export interface ValueRange {
+export interface YAxis {
   min: number;
   max: number;
+  /** Graduations, top first; zero is always one of them. */
+  ticks: number[];
+}
+
+/** 100, 200, 250, 500, 1 000, 2 000, 2 500, 5 000, 10 000 €… */
+function* roundSteps(): Generator<number> {
+  for (let power = 100; ; power *= 10) {
+    for (const factor of [1, 2, 2.5, 5]) yield factor * power;
+  }
 }
 
 /**
- * Tight bounds over every series, so a trend stays readable even far
- * from zero. A flat series gets one unit either side.
+ * The balance chart's scale (§6.7): 3 to 5 round graduations that
+ * always include 0, so going below zero reads against a fixed line.
  */
-export function valueRange(series: number[][]): ValueRange {
-  const values = series.flat();
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  return min === max ? { min: min - 1, max: max + 1 } : { min, max };
+export function yAxis(values: number[]): YAxis {
+  const low = Math.min(0, ...values);
+  const high = Math.max(0, ...values);
+  let step = 0;
+  for (step of roundSteps()) {
+    if (Math.ceil(high / step) - Math.floor(low / step) <= 4) break;
+  }
+  let min = Math.floor(low / step) * step;
+  let max = Math.ceil(high / step) * step;
+  if ((max - min) / step < 2) {
+    if (max > 0 || min === 0) max = min + 2 * step;
+    else min = max - 2 * step;
+  }
+  const ticks: number[] = [];
+  for (let tick = max; tick >= min; tick -= step) ticks.push(tick);
+  return { min, max, ticks };
 }
 
-/** SVG path of `values` spread over `width`, `range.max` at the top edge. */
-export function linePath(values: number[], range: ValueRange, width: number, height: number): string {
-  const y = (value: number) => round(height - ((value - range.min) / (range.max - range.min)) * height);
-  if (values.length === 1) return `M0 ${y(values[0])} L${width} ${y(values[0])}`;
-  const step = width / (values.length - 1);
-  return values.map((value, i) => `${i === 0 ? 'M' : 'L'}${round(i * step)} ${y(value)}`).join(' ');
+/**
+ * SVG path through months `from`…`to`, each at the middle of its twelfth
+ * of `width`, `scale.max` at the top edge. A month without a value is
+ * skipped.
+ */
+export function columnPath(
+  values: (number | null)[],
+  from: number,
+  to: number,
+  scale: { min: number; max: number },
+  width: number,
+  height: number
+): string {
+  const points: string[] = [];
+  for (let month = from; month <= to; month++) {
+    const value = values[month];
+    if (value === null || value === undefined) continue;
+    const x = round(((month + 0.5) / 12) * width);
+    const y = round(((scale.max - value) / (scale.max - scale.min)) * height);
+    points.push(`${points.length === 0 ? 'M' : 'L'}${x} ${y}`);
+  }
+  return points.join(' ');
 }
 
 const round = (n: number) => Math.round(n * 100) / 100;

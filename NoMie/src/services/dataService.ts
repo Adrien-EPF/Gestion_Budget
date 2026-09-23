@@ -355,15 +355,6 @@ export interface AccountYearBalances {
   real: number[];
 }
 
-/** Month-by-month sum of several accounts' balances — « tous les comptes » on the Bilan annuel (#28). */
-export function sumBalanceSeries(series: AccountYearBalances[]): { pointed: number[]; real: number[] } {
-  const sum = (pick: (s: AccountYearBalances) => number[]) =>
-    Array.from({ length: 12 }, (_, month) =>
-      roundToCents(series.reduce((total, s) => total + pick(s)[month], 0))
-    );
-  return { pointed: sum((s) => s.pointed), real: sum((s) => s.real) };
-}
-
 interface CategoryRow {
   id: number;
   name: string;

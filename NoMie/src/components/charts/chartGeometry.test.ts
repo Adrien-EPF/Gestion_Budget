@@ -1,5 +1,5 @@
 import { colors } from '../../theme/tokens';
-import { groupExpenses, linePath, valueRange } from './chartGeometry';
+import { columnPath, groupExpenses, yAxis } from './chartGeometry';
 
 const months = (entries: Record<number, number>) => {
   const values = Array<number>(12).fill(0);
@@ -13,27 +13,6 @@ const series = (name: string | null, total: number, byMonth: Record<number, numb
 });
 
 describe('chartGeometry', () => {
-  describe('valueRange', () => {
-    it('spans every value of every series', () => {
-      expect(valueRange([[3, 8, 5], [1, 4]])).toEqual({ min: 1, max: 8 });
-    });
-
-    it('opens a flat series around its value so it can be drawn mid-height', () => {
-      expect(valueRange([[100, 100]])).toEqual({ min: 99, max: 101 });
-      expect(valueRange([[0, 0]])).toEqual({ min: -1, max: 1 });
-    });
-  });
-
-  describe('linePath', () => {
-    it('spreads the points evenly across the width, highest value on top', () => {
-      expect(linePath([0, 10, 5], { min: 0, max: 10 }, 200, 100)).toBe('M0 100 L100 0 L200 50');
-    });
-
-    it('draws a single value as a flat line across the width', () => {
-      expect(linePath([5], { min: 0, max: 10 }, 200, 100)).toBe('M0 50 L200 50');
-    });
-  });
-
   describe('groupExpenses', () => {
     it('ranks the categories by amount and colours them by rank, each with its share', () => {
       const groups = groupExpenses([series('Loisir', 25), series('Restaurant', 75)]);
@@ -95,6 +74,38 @@ describe('chartGeometry', () => {
 
     it('leaves out what had no spending', () => {
       expect(groupExpenses([series('A', 0), series(null, 0)])).toEqual([]);
+    });
+  });
+
+  describe('yAxis', () => {
+    it('picks a round step giving at most four intervals, from zero', () => {
+      expect(yAxis([1320, 1640, 980])).toEqual({ min: 0, max: 2000, ticks: [2000, 1500, 1000, 500, 0] });
+    });
+
+    it('always includes zero, below it too', () => {
+      expect(yAxis([-240, 690]).ticks).toEqual([750, 500, 250, 0, -250]);
+      expect(yAxis([-300, -50]).ticks).toEqual([0, -100, -200, -300]);
+    });
+
+    it('keeps at least three graduations for small or flat balances', () => {
+      expect(yAxis([0, 0]).ticks).toEqual([200, 100, 0]);
+      expect(yAxis([50]).ticks).toEqual([200, 100, 0]);
+    });
+
+    it('goes on with round steps past 10 000 €', () => {
+      expect(yAxis([45000]).ticks).toEqual([60000, 40000, 20000, 0]);
+    });
+  });
+
+  describe('columnPath', () => {
+    const scale = { min: 0, max: 100 };
+
+    it('joins the months at the middle of their twelve columns, highest value on top', () => {
+      expect(columnPath([100, 50, 0], 0, 2, scale, 1200, 100)).toBe('M50 0 L150 50 L250 100');
+    });
+
+    it('draws only the months asked for, skipping the ones without a value', () => {
+      expect(columnPath([0, 50, null, 100], 1, 3, scale, 1200, 100)).toBe('M150 50 L350 0');
     });
   });
 });

@@ -1,5 +1,5 @@
 import { createTestDataService } from '../test-utils/createTestDataService';
-import { sumBalanceSeries, type DataService, type TransactionStatus } from './dataService';
+import type { DataService, TransactionStatus } from './dataService';
 
 const zeros = () => Array<number>(12).fill(0);
 const at = (entries: Record<number, number>) => {
@@ -181,15 +181,6 @@ describe('dataService — bilan annuel (#25)', () => {
     });
   });
 
-  it('sums several accounts’ balances month by month, to the cent', async () => {
-    await dataService.createAccount({ name: 'Livret', initialBalance: 0.2 });
-    await record('Restaurant', -0.1, '2026-03-02');
-
-    const total = sumBalanceSeries(await dataService.getBalanceSeries(2026));
-
-    expect(total.real).toEqual([1000.2, 1000.2, 1000.1, ...Array<number>(9).fill(1000.1)]);
-    expect(total.pointed).toEqual(Array<number>(12).fill(1000.2));
-  });
 });
 
 describe('dataService — cadre du bilan annuel (§6.7)', () => {

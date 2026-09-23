@@ -8,7 +8,7 @@ import { groupExpenses, type ExpenseGroup } from '../components/charts/chartGeom
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { YearTable, type YearTableRow } from '../components/YearTable';
 import { monthName } from '../navigation/formatMonthLabel';
-import { sumBalanceSeries, type CategoryYearFlow, type YearStatus } from '../services/dataService';
+import type { CategoryYearFlow, YearStatus } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
 import {
   CHART_ACCOUNT_COLORS,
@@ -102,9 +102,16 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
                 {balances && balances.length > 0 ? (
                   <>
                     <BalanceLineChart
+                      key={year}
                       testID="balance-chart"
-                      {...sumBalanceSeries(balances)}
-                      subject="tous les comptes"
+                      accounts={balances.map(({ account, real, pointed }) => ({
+                        id: account.id,
+                        name: account.name,
+                        color: accountColor.get(account.id)!,
+                        real,
+                        pointed,
+                      }))}
+                      lastMonth={status.lastMonth}
                     />
                     <YearTable
                       testID="year-balances"
