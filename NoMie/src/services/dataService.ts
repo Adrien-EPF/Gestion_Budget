@@ -272,6 +272,24 @@ export interface BudgetOverview {
   planned: number;
 }
 
+/** One budget over the months of a year it was in force (#29). */
+export interface BudgetYearComparison {
+  budget: Budget;
+  /** Monthly ceiling × months counted; carry-over only moves money between months. */
+  planned: number;
+  spent: number;
+  exceeded: boolean;
+  /** Past 85 % of the plan, like `BudgetProgress.watch`. */
+  watch: boolean;
+}
+
+export interface BudgetYearOverview {
+  /** Last month counted (0-11): December for a past year, the current month for this one; `null` for a year to come. */
+  lastMonth: number | null;
+  /** Budgets in force during at least one counted month, in category order. */
+  budgets: BudgetYearComparison[];
+}
+
 /** Above this share of its ceiling a budget is tinted « à surveiller » (handoff §6.3). */
 export const BUDGET_WATCH_THRESHOLD = 0.85;
 
@@ -324,6 +342,15 @@ export interface AccountYearBalances {
   account: Account;
   pointed: number[];
   real: number[];
+}
+
+/** Month-by-month sum of several accounts' balances — « tous les comptes » on the Bilan annuel (#28). */
+export function sumBalanceSeries(series: AccountYearBalances[]): { pointed: number[]; real: number[] } {
+  const sum = (pick: (s: AccountYearBalances) => number[]) =>
+    Array.from({ length: 12 }, (_, month) =>
+      roundToCents(series.reduce((total, s) => total + pick(s)[month], 0))
+    );
+  return { pointed: sum((s) => s.pointed), real: sum((s) => s.real) };
 }
 
 interface CategoryRow {
@@ -1317,8 +1344,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     };
   }
 
-  /** Budgets in force during `month`, each measured against that month, in category order. */
-  async function getBudgetOverview(month: MonthRef): Promise<BudgetOverview> {
+  /** Budgets started by `month`, in category order. */
+  async function listBudgetsInForceAt(month: MonthRef): Promise<Budget[]> {
     const rows = await db.getAllAsync<BudgetRow>(
       `SELECT b.*, c.name AS category_name
        FROM budgets b JOIN categories c ON c.id = b.category_id
@@ -1326,12 +1353,54 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
        ORDER BY c.sort_order ASC`,
       [monthKey(month)]
     );
-    const budgets = await Promise.all(rows.map((row) => measureBudget(toBudget(row), month)));
+    return rows.map(toBudget);
+  }
+
+  /** Budgets in force during `month`, each measured against that month, in category order. */
+  async function getBudgetOverview(month: MonthRef): Promise<BudgetOverview> {
+    const budgets = await Promise.all(
+      (await listBudgetsInForceAt(month)).map((budget) => measureBudget(budget, month))
+    );
     return {
       budgets,
       spent: roundToCents(budgets.reduce((sum, b) => sum + b.spent, 0)),
       planned: roundToCents(budgets.reduce((sum, b) => sum + b.ceiling, 0)),
     };
+  }
+
+  /**
+   * Budget prévu vs réalisé over `year` (#29): each budget's months in
+   * force, from its start (or January) through December — or through the
+   * current month for this year, so a comparison never counts months
+   * that haven't happened. Spending follows the same rules as Budgets.
+   */
+  async function getBudgetYearComparison(year: number): Promise<BudgetYearOverview> {
+    const current = now();
+    const lastMonth =
+      year < current.getFullYear() ? 11 : year === current.getFullYear() ? current.getMonth() : null;
+    if (lastMonth === null) return { lastMonth, budgets: [] };
+
+    const last: MonthRef = { year, month: lastMonth };
+    const budgets = await Promise.all(
+      (await listBudgetsInForceAt(last)).map(async (budget) => {
+        const first = budget.startMonth.year < year ? { year, month: 0 } : budget.startMonth;
+        const spentByMonth = await getCategorySpendByMonth(
+          budget.categoryId,
+          monthBounds(first)[0],
+          monthBounds(last)[1]
+        );
+        const planned = roundToCents(budget.amount * (lastMonth - first.month + 1));
+        const spent = roundToCents([...spentByMonth.values()].reduce((sum, value) => sum + value, 0));
+        return {
+          budget,
+          planned,
+          spent,
+          exceeded: spent > planned,
+          watch: spent > planned * BUDGET_WATCH_THRESHOLD,
+        };
+      })
+    );
+    return { lastMonth, budgets };
   }
 
   const today = () => toIsoDate(now());
@@ -1804,6 +1873,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     createBudget,
     setBudgetCarryOver,
     getBudgetOverview,
+    getBudgetYearComparison,
     generateRecurrences,
     createRecurrenceRule,
     setRecurrenceAutomatic,

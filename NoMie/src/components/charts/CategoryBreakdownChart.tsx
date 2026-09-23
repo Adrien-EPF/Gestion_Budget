@@ -35,6 +35,7 @@ export function CategoryBreakdownChart({ testID, items }: CategoryBreakdownChart
           </View>
           <View style={styles.track}>
             <View
+              testID={`${testID}-slice-${rank}-fill`}
               style={[
                 styles.fill,
                 {

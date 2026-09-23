@@ -125,6 +125,26 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(chart().props.accessibilityLabel).toContain('tous les comptes');
   });
 
+  it('compares each budget planned so far this year with what was spent (#29)', async () => {
+    await act(async () => {
+      await app.dataService.createBudget({
+        categoryId: cat['Restaurant'],
+        amount: 100,
+        startMonth: { year, month: 0 },
+      });
+    });
+    await record('Restaurant', -30, `${year}-01-12`);
+    await openYearReport();
+
+    const monthsSoFar = new Date().getMonth() + 1;
+    const restaurant = within(screen.getByTestId('budget-comparison-row-Restaurant'));
+    expect(restaurant.getByText(plain(formatAmount(30)))).toBeTruthy();
+    expect(restaurant.getByText(`sur ${plain(formatAmount(100 * monthsSoFar))} prévus`)).toBeTruthy();
+
+    await press(screen.getByLabelText('Année suivante'));
+    expect(screen.getByText('Pas encore de budget à comparer sur cette année.')).toBeTruthy();
+  });
+
   it('switches year with the selector', async () => {
     await record('Restaurant', -30, `${year - 1}-06-12`);
     await openYearReport();

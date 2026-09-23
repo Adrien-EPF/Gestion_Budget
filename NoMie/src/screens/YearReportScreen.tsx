@@ -1,11 +1,18 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BalanceLineChart } from '../components/charts/BalanceLineChart';
+import { BudgetComparisonChart } from '../components/charts/BudgetComparisonChart';
 import { CategoryBreakdownChart } from '../components/charts/CategoryBreakdownChart';
 import { Chips } from '../components/Chips';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { YearTable, type YearTableRow } from '../components/YearTable';
-import type { AccountYearBalances, CategoryYearFlow } from '../services/dataService';
+import { monthName } from '../navigation/formatMonthLabel';
+import {
+  sumBalanceSeries,
+  type AccountYearBalances,
+  type BudgetYearOverview,
+  type CategoryYearFlow,
+} from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
@@ -27,7 +34,8 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
   const flows = useServiceQuery((s) => s.getCategoryFlowsByMonth(year), [year]);
   const counts = useServiceQuery((s) => s.getOperationCountsByMonth(year), [year]);
   const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
-  const [balanceAccountId, setBalanceAccountId] = useState<number | typeof ALL_ACCOUNTS>(ALL_ACCOUNTS);
+  const budgetYear = useServiceQuery((s) => s.getBudgetYearComparison(year), [year]);
+  const [balanceAccountId, setBalanceAccountId] = useState<BalanceScope>(ALL_ACCOUNTS);
 
   const expenseRows = (flows ?? [])
     .filter((f) => f.totalExpenses > 0)
@@ -88,6 +96,23 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
             )}
           </Section>
 
+          <Section title="Budget prévu et réalisé">
+            {budgetYear && budgetYear.budgets.length > 0 ? (
+              <>
+                <Note text={periodLabel(budgetYear)} />
+                <BudgetComparisonChart
+                  testID="budget-comparison"
+                  items={budgetYear.budgets.map(({ budget, ...comparison }) => ({
+                    label: budget.categoryName,
+                    ...comparison,
+                  }))}
+                />
+              </>
+            ) : (
+              <Note text="Pas encore de budget à comparer sur cette année." />
+            )}
+          </Section>
+
           <Section title="Recettes par catégorie">
             {incomeRows.length > 0 ? (
               <YearTable testID="year-income" rows={incomeRows} format={formatAmount} showTotal />
@@ -124,7 +149,16 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
   );
 }
 
+/** « De janvier à septembre » while the year is under way; the whole year once it is over. */
+function periodLabel({ lastMonth }: BudgetYearOverview): string {
+  if (lastMonth === 11) return 'Sur toute l’année.';
+  const last = monthName(lastMonth ?? 0).toLowerCase();
+  return lastMonth === 0 ? `En ${last}, pour l’instant.` : `De janvier à ${last}, pour l’instant.`;
+}
+
 const ALL_ACCOUNTS = 'all';
+/** What the balance curve shows: every account summed, or one account's id. */
+type BalanceScope = number | typeof ALL_ACCOUNTS;
 
 /**
  * Every account summed by default; chips narrow it to one account when
@@ -137,13 +171,11 @@ function BalanceChartSection({
   onAccountChange,
 }: {
   balances: AccountYearBalances[];
-  accountId: number | typeof ALL_ACCOUNTS;
-  onAccountChange: (accountId: number | typeof ALL_ACCOUNTS) => void;
+  accountId: BalanceScope;
+  onAccountChange: (accountId: BalanceScope) => void;
 }) {
   const chosen = balances.find((b) => b.account.id === accountId);
-  const shown = chosen ? [chosen] : balances;
-  const sum = (pick: (b: AccountYearBalances) => number[]) =>
-    Array.from({ length: 12 }, (_, month) => shown.reduce((total, b) => total + pick(b)[month], 0));
+  const { real, pointed } = chosen ?? sumBalanceSeries(balances);
 
   return (
     <>
@@ -160,8 +192,8 @@ function BalanceChartSection({
       )}
       <BalanceLineChart
         testID="balance-chart"
-        real={sum((b) => b.real)}
-        pointed={sum((b) => b.pointed)}
+        real={real}
+        pointed={pointed}
         subject={chosen ? chosen.account.name : 'tous les comptes'}
       />
     </>
