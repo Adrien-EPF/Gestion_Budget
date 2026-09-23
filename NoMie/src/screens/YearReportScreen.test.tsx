@@ -86,6 +86,45 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(pointed.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
   });
 
+  it('charts the spending of the year by category, largest first (#28)', async () => {
+    await record('Loisir', -25, `${year}-02-03`);
+    await record('Restaurant', -30, `${year}-01-12`);
+    await record('Restaurant', -45, `${year}-05-12`);
+    await record('Salaire/Intérêts/Avantages', 2000, `${year}-01-28`);
+    await openYearReport();
+
+    const chart = within(screen.getByTestId('expense-breakdown'));
+    const restaurant = within(chart.getByTestId('expense-breakdown-slice-0'));
+    expect(restaurant.getByText('Restaurant')).toBeTruthy();
+    expect(restaurant.getByText(plain(formatAmount(75)))).toBeTruthy();
+    expect(restaurant.getByText('75 %')).toBeTruthy();
+    const loisir = within(chart.getByTestId('expense-breakdown-slice-1'));
+    expect(loisir.getByText('Loisir')).toBeTruthy();
+    expect(loisir.getByText('25 %')).toBeTruthy();
+    expect(chart.queryByText('Salaire/Intérêts/Avantages')).toBeNull();
+  });
+
+  it('charts the balance over the year, for every account together or one at a time (#28)', async () => {
+    await act(async () => {
+      await app.dataService.createAccount({ name: 'Livret', initialBalance: 500 });
+    });
+    await record('Restaurant', -50, `${year}-01-10`);
+    await openYearReport();
+
+    const chart = () => screen.getByTestId('balance-chart');
+    expect(chart().props.accessibilityLabel).toBe(
+      `Solde réel de tous les comptes : ${formatAmount(1450)} fin janvier, ${formatAmount(1450)} fin décembre`
+    );
+
+    await press(screen.getByRole('button', { name: 'Livret' }));
+    expect(chart().props.accessibilityLabel).toBe(
+      `Solde réel de Livret : ${formatAmount(500)} fin janvier, ${formatAmount(500)} fin décembre`
+    );
+
+    await press(screen.getByRole('button', { name: 'Tous les comptes' }));
+    expect(chart().props.accessibilityLabel).toContain('tous les comptes');
+  });
+
   it('switches year with the selector', async () => {
     await record('Restaurant', -30, `${year - 1}-06-12`);
     await openYearReport();

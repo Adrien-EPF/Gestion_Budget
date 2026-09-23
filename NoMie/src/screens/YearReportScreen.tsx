@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { BalanceLineChart } from '../components/charts/BalanceLineChart';
+import { CategoryBreakdownChart } from '../components/charts/CategoryBreakdownChart';
+import { Chips } from '../components/Chips';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { YearTable, type YearTableRow } from '../components/YearTable';
-import type { CategoryYearFlow } from '../services/dataService';
+import type { AccountYearBalances, CategoryYearFlow } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
@@ -16,14 +19,15 @@ interface YearReportScreenProps {
 /**
  * Bilan annuel (#25) — the Bilan sheet of the old Excel, reached from
  * Accueil. A full-screen `Modal` owned by Accueil, like the Réglages
- * sub-screens, rather than a 6th tab. Charts come later (#28, #29); this
- * screen holds the figures as month-by-month tables.
+ * sub-screens, rather than a 6th tab. Each section shows its chart (#28)
+ * above the month-by-month table it is drawn from.
  */
 export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps) {
   const [year, setYear] = useState(initialYear);
   const flows = useServiceQuery((s) => s.getCategoryFlowsByMonth(year), [year]);
   const counts = useServiceQuery((s) => s.getOperationCountsByMonth(year), [year]);
   const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
+  const [balanceAccountId, setBalanceAccountId] = useState<number | typeof ALL_ACCOUNTS>(ALL_ACCOUNTS);
 
   const expenseRows = (flows ?? [])
     .filter((f) => f.totalExpenses > 0)
@@ -72,7 +76,13 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
         <ScrollView contentContainerStyle={styles.content}>
           <Section title="Dépenses par catégorie">
             {expenseRows.length > 0 ? (
-              <YearTable testID="year-expenses" rows={expenseRows} format={formatAmount} showTotal />
+              <>
+                <CategoryBreakdownChart
+                  testID="expense-breakdown"
+                  items={expenseRows.map((row) => ({ label: row.label, amount: row.total ?? 0 }))}
+                />
+                <YearTable testID="year-expenses" rows={expenseRows} format={formatAmount} showTotal />
+              </>
             ) : (
               <Note text="Aucune dépense cette année." />
             )}
@@ -94,9 +104,16 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
             )}
           </Section>
 
-          <Section title="Soldes en fin de mois">
-            {balanceRows.length > 0 ? (
-              <YearTable testID="year-balances" rows={balanceRows} format={formatAmount} showZeros />
+          <Section title="Évolution du solde">
+            {balances && balances.length > 0 ? (
+              <>
+                <BalanceChartSection
+                  balances={balances}
+                  accountId={balanceAccountId}
+                  onAccountChange={setBalanceAccountId}
+                />
+                <YearTable testID="year-balances" rows={balanceRows} format={formatAmount} showZeros />
+              </>
             ) : (
               <Note text="Aucun compte pour l’instant." />
             )}
@@ -104,6 +121,50 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
         </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+const ALL_ACCOUNTS = 'all';
+
+/**
+ * Every account summed by default; chips narrow it to one account when
+ * there are several. A chosen account missing from another year falls
+ * back to the sum.
+ */
+function BalanceChartSection({
+  balances,
+  accountId,
+  onAccountChange,
+}: {
+  balances: AccountYearBalances[];
+  accountId: number | typeof ALL_ACCOUNTS;
+  onAccountChange: (accountId: number | typeof ALL_ACCOUNTS) => void;
+}) {
+  const chosen = balances.find((b) => b.account.id === accountId);
+  const shown = chosen ? [chosen] : balances;
+  const sum = (pick: (b: AccountYearBalances) => number[]) =>
+    Array.from({ length: 12 }, (_, month) => shown.reduce((total, b) => total + pick(b)[month], 0));
+
+  return (
+    <>
+      {balances.length > 1 && (
+        <Chips
+          scroll
+          value={chosen ? chosen.account.id : ALL_ACCOUNTS}
+          onChange={onAccountChange}
+          options={[
+            { value: ALL_ACCOUNTS, label: 'Tous les comptes' },
+            ...balances.map((b) => ({ value: b.account.id, label: b.account.name })),
+          ]}
+        />
+      )}
+      <BalanceLineChart
+        testID="balance-chart"
+        real={sum((b) => b.real)}
+        pointed={sum((b) => b.pointed)}
+        subject={chosen ? chosen.account.name : 'tous les comptes'}
+      />
+    </>
   );
 }
 
