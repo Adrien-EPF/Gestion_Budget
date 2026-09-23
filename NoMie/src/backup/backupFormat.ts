@@ -46,6 +46,7 @@ export interface BackupSplitRow {
   category_id: number | null;
   amount: number;
   advanced: number;
+  reimbursed_at: string | null;
 }
 
 export interface BackupBudgetRow {

@@ -428,18 +428,27 @@ describe('Écran Réglages', () => {
       expect(screen.getByTestId('app-bar-title').props.children).toBe('Comptes');
     });
 
-    it.each(['Catégories', 'Avances en attente'])(
-      'shows %s without a destination yet: inert, and Réglages stays open',
-      async (label) => {
-        await openSettings();
+    it('opens Catégories from the Catégories link, and Fermer returns to Réglages', async () => {
+      await openSettings();
 
-        const row = screen.getByRole('button', { name: label });
-        expect(row.props.accessibilityState.disabled).toBe(true);
-        await press(row);
+      await press(screen.getByRole('button', { name: 'Catégories' }));
+      expect(await screen.findByTestId('categories-title')).toBeTruthy();
 
-        expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
-      }
-    );
+      await press(screen.getByRole('button', { name: 'Fermer' }));
+      expect(screen.queryByTestId('categories-title')).toBeNull();
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
+    });
+
+    it('opens Avances en attente from its link, and Fermer returns to Réglages', async () => {
+      await openSettings();
+
+      await press(screen.getByRole('button', { name: 'Avances en attente' }));
+      expect(await screen.findByTestId('advances-title')).toBeTruthy();
+
+      await press(screen.getByRole('button', { name: 'Fermer' }));
+      expect(screen.queryByTestId('advances-title')).toBeNull();
+      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
+    });
   });
 
   describe('données', () => {

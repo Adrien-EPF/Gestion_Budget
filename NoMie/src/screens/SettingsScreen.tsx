@@ -10,6 +10,8 @@ import type { TabScreenProps } from '../navigation/types';
 import { DevNotificationTest } from '../notifications/DevNotificationTest';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
 import { isNotificationSetting, setNotificationSetting } from '../notifications/reconcile';
+import { CategoriesScreen } from './CategoriesScreen';
+import { PendingAdvancesScreen } from './PendingAdvancesScreen';
 import { LockScreen } from '../security/LockScreen';
 import { PinSetupSheet } from '../security/PinSetupSheet';
 import { useSecurityStore } from '../security/SecurityStoreContext';
@@ -49,6 +51,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
   const [pinSetupVisible, setPinSetupVisible] = useState(false);
   const [authGate, setAuthGate] = useState<AuthGateTarget | null>(null);
   const [biometricMessage, setBiometricMessage] = useState<string | null>(null);
+  const [categoriesVisible, setCategoriesVisible] = useState(false);
+  const [advancesVisible, setAdvancesVisible] = useState(false);
 
   if (!settings || !structure) return <Screen title="Réglages">{null}</Screen>;
 
@@ -139,8 +143,16 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
             hint={describeAccounts(structure)}
             onPress={() => navigation.navigate('Comptes')}
           />
-          <LinkRow label="Catégories" hint={describeCategories(structure)} />
-          <LinkRow label="Avances en attente" hint={describeAdvances(structure)} />
+          <LinkRow
+            label="Catégories"
+            hint={describeCategories(structure)}
+            onPress={() => setCategoriesVisible(true)}
+          />
+          <LinkRow
+            label="Avances en attente"
+            hint={describeAdvances(structure)}
+            onPress={() => setAdvancesVisible(true)}
+          />
         </SettingsGroup>
 
         <SettingsGroup
@@ -183,6 +195,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
       </ScrollView>
       <ImportBackupSheet file={pendingImport} onClose={() => setPendingImport(null)} />
       <PinSetupSheet visible={pinSetupVisible} onClose={() => setPinSetupVisible(false)} />
+      <CategoriesScreen visible={categoriesVisible} onClose={() => setCategoriesVisible(false)} />
+      <PendingAdvancesScreen visible={advancesVisible} onClose={() => setAdvancesVisible(false)} />
       {authGate ? (
         <LockScreen
           biometricEnabled={settings.biometricEnabled}

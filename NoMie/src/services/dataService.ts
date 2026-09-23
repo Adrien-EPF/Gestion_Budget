@@ -39,6 +39,30 @@ export interface Category {
   order: number;
 }
 
+export interface NewCategory {
+  name: string;
+  kind: CategoryKind;
+  /** One of the fixed palette's hex values; `null`/omitted keeps the placeholder tint. */
+  color?: string | null;
+}
+
+/** What may be changed on an existing category — never its `kind`, fixed at creation. */
+export interface CategoryChanges {
+  name?: string;
+  color?: string | null;
+  hidden?: boolean;
+}
+
+/** One portion marked Avancé, still waiting to be paid back, as the dedicated screen lists it. */
+export interface PendingAdvance {
+  splitId: number;
+  accountName: string;
+  categoryName: string | null;
+  /** Absolute value — an advance is always shown as a positive amount owed. */
+  amount: number;
+  operationDate: string;
+}
+
 export interface Account {
   id: number;
   name: string;
@@ -579,6 +603,60 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     return rows.map(toCategory);
   }
 
+  /** Appended at the end of the order, visible, icon derived like the seeded categories (#21). */
+  async function createCategory(input: NewCategory): Promise<Category> {
+    const name = input.name.trim();
+    if (name === '') throw new Error('A category needs a name.');
+    const last = await db.getFirstAsync<{ max: number | null }>(
+      'SELECT MAX(sort_order) AS max FROM categories'
+    );
+    const order = (last?.max ?? 0) + 1;
+    const icon = deriveInitials(name);
+    const color = input.color ?? null;
+    const result = await db.runAsync(
+      'INSERT INTO categories (name, kind, icon, color, hidden, sort_order) VALUES (?, ?, ?, ?, 0, ?)',
+      [name, input.kind, icon, color, order]
+    );
+    notifyChange();
+    return { id: result.lastInsertRowId, name, kind: input.kind, icon, color, hidden: false, order };
+  }
+
+  /**
+   * Renames, recolors and/or shows or hides a category. Hiding never
+   * touches its `kind`, `icon` or existing transactions (#21 story 5) —
+   * only the chip pickers filter it out. Renaming recomputes the initials
+   * placeholder so it never goes stale.
+   */
+  async function updateCategory(id: number, changes: CategoryChanges): Promise<void> {
+    const row = await db.getFirstAsync<CategoryRow>('SELECT * FROM categories WHERE id = ?', [id]);
+    if (!row) throw new Error(`Category ${id} does not exist.`);
+
+    const name = changes.name !== undefined ? changes.name.trim() : row.name;
+    if (name === '') throw new Error('A category needs a name.');
+    const icon = changes.name !== undefined ? deriveInitials(name) : row.icon;
+    const color = changes.color !== undefined ? changes.color : row.color;
+    const hidden = changes.hidden !== undefined ? changes.hidden : row.hidden === 1;
+
+    await db.runAsync('UPDATE categories SET name = ?, icon = ?, color = ?, hidden = ? WHERE id = ?', [
+      name,
+      icon,
+      color,
+      hidden ? 1 : 0,
+      id,
+    ]);
+    notifyChange();
+  }
+
+  /** Rewrites every `sort_order` from the given, complete order of category ids (#21). */
+  async function reorderCategories(orderedIds: number[]): Promise<void> {
+    await db.transactionAsync(async () => {
+      for (let i = 0; i < orderedIds.length; i++) {
+        await db.runAsync('UPDATE categories SET sort_order = ? WHERE id = ?', [i + 1, orderedIds[i]]);
+      }
+    });
+    notifyChange();
+  }
+
   async function listAccounts(options?: { includeArchived?: boolean }): Promise<Account[]> {
     const includeArchived = options?.includeArchived ?? true;
     const rows = await db.getAllAsync<AccountRow>(
@@ -886,9 +964,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Advanced portions waiting to be paid back, over active accounts. There
-   * is no reimbursement flow yet (the dedicated view is out of scope in
-   * #3), so every portion marked Avancé counts as pending.
+   * Advanced portions waiting to be paid back, over active accounts.
+   * Reimbursed portions (`reimbursed_at` set, #21) drop out as soon as
+   * they're marked, here and on the dedicated Avances en attente screen.
    */
   async function getPendingAdvances(): Promise<PendingAdvances> {
     const row = await db.getFirstAsync<{ count: number; total: number | null }>(
@@ -896,9 +974,42 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
        FROM transaction_splits s
        JOIN transactions t ON t.id = s.transaction_id
        JOIN accounts a ON a.id = t.account_id
-       WHERE a.archived = 0 AND s.advanced = 1`
+       WHERE a.archived = 0 AND s.advanced = 1 AND s.reimbursed_at IS NULL`
     );
     return { count: row?.count ?? 0, total: roundToCents(row?.total ?? 0) };
+  }
+
+  /** Every portion behind `getPendingAdvances`'s total, detailed for the Avances en attente screen (#21). */
+  async function listPendingAdvances(): Promise<PendingAdvance[]> {
+    const rows = await db.getAllAsync<{
+      split_id: number;
+      account_name: string;
+      category_name: string | null;
+      amount: number;
+      operation_date: string;
+    }>(
+      `SELECT s.id AS split_id, a.name AS account_name, c.name AS category_name,
+         ABS(s.amount) AS amount, t.operation_date AS operation_date
+       FROM transaction_splits s
+       JOIN transactions t ON t.id = s.transaction_id
+       JOIN accounts a ON a.id = t.account_id
+       LEFT JOIN categories c ON c.id = s.category_id
+       WHERE a.archived = 0 AND s.advanced = 1 AND s.reimbursed_at IS NULL
+       ORDER BY t.operation_date DESC, s.id DESC`
+    );
+    return rows.map((row) => ({
+      splitId: row.split_id,
+      accountName: row.account_name,
+      categoryName: row.category_name,
+      amount: roundToCents(row.amount),
+      operationDate: row.operation_date,
+    }));
+  }
+
+  /** Marks one portion paid back, dated today; it leaves the pending list for good (#21, out of scope: undo). */
+  async function markAdvanceReimbursed(splitId: number): Promise<void> {
+    await db.runAsync('UPDATE transaction_splits SET reimbursed_at = ? WHERE id = ?', [today(), splitId]);
+    notifyChange();
   }
 
   /** Categories a budget can still be created for: visible, able to carry an expense, not yet budgeted. */
@@ -1304,8 +1415,10 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       }
       for (const row of data.transactionSplits) {
         await db.runAsync(
-          'INSERT INTO transaction_splits (id, transaction_id, category_id, amount, advanced) VALUES (?, ?, ?, ?, ?)',
-          [row.id, row.transaction_id, row.category_id, row.amount, row.advanced]
+          `INSERT INTO transaction_splits
+             (id, transaction_id, category_id, amount, advanced, reimbursed_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [row.id, row.transaction_id, row.category_id, row.amount, row.advanced, row.reimbursed_at ?? null]
         );
       }
       for (const row of data.budgets) {
@@ -1470,6 +1583,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     initialize,
     subscribe,
     listCategories,
+    createCategory,
+    updateCategory,
+    reorderCategories,
     listAccounts,
     getAccount,
     createAccount,
@@ -1488,6 +1604,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     getBalanceTotals,
     getMonthSummary,
     getPendingAdvances,
+    listPendingAdvances,
+    markAdvanceReimbursed,
     listCategoriesWithoutBudget,
     createBudget,
     setBudgetCarryOver,

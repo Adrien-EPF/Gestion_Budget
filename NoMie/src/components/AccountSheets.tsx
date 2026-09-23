@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import type { Account } from '../services/dataService';
 import { useDataService } from '../services/DataServiceContext';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { parseMoneyInput, toMoneyInput } from '../utils/amountInput';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
+import { MenuRow } from './MenuRow';
 import { TextField } from './TextField';
 
 const NAME_REQUIRED = 'Donne un nom à ce compte.';
@@ -194,20 +195,6 @@ function AccountActions({ account, onClose }: { account: Account; onClose: () =>
   );
 }
 
-function MenuRow({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      onPress={onPress}
-      style={({ pressed }) => [styles.menuRow, pressed && { backgroundColor: colors.canvas }]}
-    >
-      <Text style={[textStyle('bodyLg'), styles.menuLabel]}>{label}</Text>
-      <Text style={[textStyle('bodyLg'), styles.chevron]}>›</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   form: {
     gap: spacing.sm,
@@ -228,20 +215,5 @@ const styles = StyleSheet.create({
   },
   menu: {
     marginHorizontal: -spacing.xl,
-  },
-  menuRow: {
-    minHeight: 56,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: colors.hairline,
-  },
-  menuLabel: {
-    color: colors.ink,
-  },
-  chevron: {
-    color: colors.ash,
   },
 });

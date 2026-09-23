@@ -40,6 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_transactions_date ON transactions (operation_date
 CREATE INDEX IF NOT EXISTS idx_transactions_status ON transactions (status);
 
 -- Répartition of a transaction. Amounts are signed like the transaction they belong to.
+-- reimbursed_at (ISO date, nullable): set once an Avancé portion is paid back; added via COLUMN_MIGRATIONS.
 CREATE TABLE IF NOT EXISTS transaction_splits (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   transaction_id INTEGER NOT NULL,
@@ -94,4 +95,5 @@ export interface ColumnMigration {
 export const COLUMN_MIGRATIONS: ColumnMigration[] = [
   { table: 'transactions', column: 'mirror_transaction_id', definition: 'INTEGER' },
   { table: 'transactions', column: 'recurrence_rule_id', definition: 'INTEGER' },
+  { table: 'transaction_splits', column: 'reimbursed_at', definition: 'TEXT' },
 ];

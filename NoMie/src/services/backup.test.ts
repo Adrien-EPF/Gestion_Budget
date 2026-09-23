@@ -116,6 +116,23 @@ describe('dataService — sauvegarde (createBackup / restoreBackup)', () => {
     await target.close();
   });
 
+  it('carries a reimbursed advance through so it does not come back as pending (#21)', async () => {
+    await seed(dataService);
+    const [pending] = await dataService.listPendingAdvances();
+    expect(pending).toBeDefined();
+    await dataService.markAdvanceReimbursed(pending.splitId);
+    expect(await dataService.getPendingAdvances()).toEqual({ count: 0, total: 0 });
+
+    const backup = await dataService.createBackup();
+    const target = await createTestDataService();
+    await target.dataService.restoreBackup(JSON.stringify(backup));
+
+    expect(await target.dataService.getPendingAdvances()).toEqual({ count: 0, total: 0 });
+    expect(await target.dataService.listPendingAdvances()).toEqual([]);
+
+    await target.close();
+  });
+
   it('overwrites a non-empty database entirely', async () => {
     await dataService.createAccount({ name: 'À écraser', initialBalance: 500 });
 

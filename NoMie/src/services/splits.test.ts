@@ -310,6 +310,70 @@ describe('dataService — split, inter-account movements, advances', () => {
       const toPoint = await dataService.listTransactionsToPoint();
       expect(toPoint.find((r) => r.comment === 'Le Comptoir')?.advancedAmount).toBe(14.25);
     });
+
+    describe('remboursement (#21, #27)', () => {
+      it('lists each pending portion with its account, category, amount and operation date', async () => {
+        await advance(courant, 10, '2026-09');
+        await advance(livret, 20, '2026-08');
+
+        const pending = await dataService.listPendingAdvances();
+        expect(pending).toEqual([
+          {
+            splitId: expect.any(Number),
+            accountName: 'Compte courant',
+            categoryName: 'Avancé',
+            amount: 10,
+            operationDate: '2026-09-11',
+          },
+          {
+            splitId: expect.any(Number),
+            accountName: 'Livret A',
+            categoryName: 'Avancé',
+            amount: 20,
+            operationDate: '2026-08-11',
+          },
+        ]);
+      });
+
+      it('marking a portion reimbursed removes it from the list and from the pending total', async () => {
+        await advance(courant, 10);
+        await advance(livret, 20);
+        const [first] = await dataService.listPendingAdvances();
+
+        await dataService.markAdvanceReimbursed(first.splitId);
+
+        const pending = await dataService.listPendingAdvances();
+        expect(pending).toHaveLength(1);
+        expect(pending.find((p) => p.splitId === first.splitId)).toBeUndefined();
+        expect(await dataService.getPendingAdvances()).toEqual({ count: 1, total: 30 - first.amount });
+      });
+
+      it('does not affect other portions of the same split transaction', async () => {
+        await dataService.createTransaction({
+          accountId: courant,
+          operationDate: '2026-09-11',
+          amount: -40,
+          splits: [{ amount: -20, advanced: true }, { amount: -20, advanced: true }],
+        });
+        const [first, second] = await dataService.listPendingAdvances();
+
+        await dataService.markAdvanceReimbursed(first.splitId);
+
+        const pending = await dataService.listPendingAdvances();
+        expect(pending).toEqual([expect.objectContaining({ splitId: second.splitId })]);
+      });
+
+      it('notifies subscribers so Accueil and the pending total refresh', async () => {
+        await advance(courant, 10);
+        const [pending] = await dataService.listPendingAdvances();
+        const listener = jest.fn();
+        dataService.subscribe(listener);
+
+        await dataService.markAdvanceReimbursed(pending.splitId);
+
+        expect(listener).toHaveBeenCalled();
+      });
+    });
   });
 
   describe('upgrading a database created before this ticket', () => {
