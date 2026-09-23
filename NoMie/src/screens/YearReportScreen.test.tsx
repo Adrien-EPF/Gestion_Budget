@@ -75,13 +75,14 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(screen.queryByTestId('year-income-row-Restaurant')).toBeNull();
   });
 
-  it('shows operation counts per account and end-of-month real balances', async () => {
+  it('shows the net change of each account per month and end-of-month real balances', async () => {
     await record('Restaurant', -40, `${year}-01-10`);
     await record('Restaurant', -10, `${year}-01-20`);
     await openYearReport();
 
-    const counts = within(screen.getByTestId('year-counts-row-Compte courant'));
-    expect(counts.getAllByText('2')).toHaveLength(2); // January and the annual total
+    const changes = within(screen.getByTestId('year-changes-row-Compte courant'));
+    expect(changes.getAllByText(plain(formatAmount(-50, { signed: true })))).toHaveLength(2); // January and the annual total
+    expect(changes.getAllByText('—')).toHaveLength(11);
 
     const real = within(screen.getByTestId('year-balances-row-Compte courant'));
     expect(real.getAllByText(plain(formatAmount(950)))).toHaveLength(12);

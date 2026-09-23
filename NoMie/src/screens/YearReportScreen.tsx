@@ -40,7 +40,7 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
   const [year, setYear] = useState(initialYear);
   const status = useServiceQuery((s) => s.getYearStatus(year), [year]);
   const flows = useServiceQuery((s) => s.getCategoryFlowsByMonth(year), [year]);
-  const counts = useServiceQuery((s) => s.getOperationCountsByMonth(year), [year]);
+  const changes = useServiceQuery((s) => s.getNetChangesByMonth(year), [year]);
   const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
   const budgetYear = useServiceQuery((s) => s.getBudgetYear(year), [year]);
 
@@ -57,7 +57,7 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
     (flows ?? []).map((f) => ({ name: f.categoryName, months: f.expenses, total: f.totalExpenses }))
   );
   const incomeRows = rankedIncomeRows(flows ?? []);
-  const countRows: YearTableRow[] = (counts ?? []).map(({ account, counts: values, total }) => ({
+  const changeRows: YearTableRow[] = (changes ?? []).map(({ account, changes: values, total }) => ({
     key: account.name,
     label: account.name,
     color: accountColor.get(account.id),
@@ -178,14 +178,13 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
                 )}
               </Section>
 
-              {/* §6.7 suggests the net monthly change here; #25 asked for the number of operations, kept until decided. */}
               <Section title="Opérations par compte">
-                {countRows.length > 0 ? (
+                {changeRows.length > 0 ? (
                   <YearTable
-                    testID="year-counts"
-                    heading="Opérations"
-                    rows={countRows}
-                    format={String}
+                    testID="year-changes"
+                    heading="Variation nette"
+                    rows={changeRows}
+                    format={formatSignedAmount}
                     showTotal
                   />
                 ) : (
@@ -251,6 +250,11 @@ function rankedIncomeRows(flows: CategoryYearFlow[]): YearTableRow[] {
 }
 
 /** Appends the Total line, month by month and for the year. */
+/** Net changes read as movements: `+312,40 €` / `−85,10 €`. */
+function formatSignedAmount(amount: number): string {
+  return formatAmount(amount, { signed: true });
+}
+
 function withTotal(rows: YearTableRow[]): YearTableRow[] {
   const cents = (n: number) => Math.round(n * 100) / 100;
   return [

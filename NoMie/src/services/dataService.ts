@@ -352,10 +352,10 @@ export interface CategoryYearFlow {
   totalIncome: number;
 }
 
-/** How many operations one account had each month of the Bilan annuel's year (#25). */
-export interface AccountYearCounts {
+/** How much one account moved each month of the Bilan annuel's year (#36, handoff §6.7). */
+export interface AccountYearChanges {
   account: Account;
-  counts: number[];
+  changes: number[];
   total: number;
 }
 
@@ -1126,13 +1126,16 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Operations of `year` per account and per month (#25), every status —
-   * like `monthOperationCount` on Comptes. An archived account stays in
-   * the Bilan of the years it was used, and only those.
+   * Net change of each account per month of `year` (#36, handoff §6.7):
+   * the operations done (non pointées and pointées), like the Dépenses
+   * and Recettes tables — no forecasts, no accounting flows. An archived
+   * account stays in the Bilan of the years it was used, and only those.
    */
-  async function getOperationCountsByMonth(year: number): Promise<AccountYearCounts[]> {
-    const rows = await db.getAllAsync<AccountRow & { month: string | null; count: number }>(
-      `SELECT a.*, substr(t.operation_date, 6, 2) AS month, COUNT(t.id) AS count
+  async function getNetChangesByMonth(year: number): Promise<AccountYearChanges[]> {
+    const rows = await db.getAllAsync<AccountRow & { month: string | null; change: number | null; count: number }>(
+      `SELECT a.*, substr(t.operation_date, 6, 2) AS month,
+         SUM(CASE WHEN t.status IN ('non_pointe', 'pointe') THEN t.amount END) AS change,
+         COUNT(t.id) AS count
        FROM accounts a
        LEFT JOIN transactions t ON t.account_id = a.id
          AND t.operation_date >= ? AND t.operation_date < ?
@@ -1141,25 +1144,31 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       yearBounds(year)
     );
 
-    const byAccount = new Map<number, AccountYearCounts>();
+    const byAccount = new Map<number, AccountYearChanges & { count: number }>();
     for (const row of rows) {
       let entry = byAccount.get(row.id);
       if (!entry) {
-        entry = { account: toAccount(row), counts: Array<number>(12).fill(0), total: 0 };
+        entry = { account: toAccount(row), changes: Array<number>(12).fill(0), total: 0, count: 0 };
         byAccount.set(row.id, entry);
       }
       if (row.month !== null) {
-        entry.counts[Number(row.month) - 1] = row.count;
-        entry.total += row.count;
+        entry.changes[Number(row.month) - 1] = roundToCents(row.change ?? 0);
+        entry.count += row.count;
       }
     }
-    return [...byAccount.values()].filter((entry) => !entry.account.archived || entry.total > 0);
+    return [...byAccount.values()]
+      .filter((entry) => !entry.account.archived || entry.count > 0)
+      .map(({ account, changes }) => ({
+        account,
+        changes,
+        total: roundToCents(changes.reduce((sum, v) => sum + v, 0)),
+      }));
   }
 
   /**
    * Each account's pointé and réel balances at the end of every month of
    * `year` (#25), same rules as `listAccountSummaries` and the same
-   * accounts as `getOperationCountsByMonth`. SQL sums the history before
+   * accounts as `getNetChangesByMonth`. SQL sums the history before
    * the year and each month; only the 12-step running total is done here.
    */
   async function getBalanceSeries(year: number): Promise<AccountYearBalances[]> {
@@ -1916,7 +1925,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     getMonthSummary,
     getYearStatus,
     getCategoryFlowsByMonth,
-    getOperationCountsByMonth,
+    getNetChangesByMonth,
     getBalanceSeries,
     getPendingAdvances,
     listPendingAdvances,

@@ -120,35 +120,43 @@ describe('dataService — bilan annuel (#25)', () => {
     });
   });
 
-  describe("nombre d'opérations par compte et par mois", () => {
-    it('counts every operation of the year, whatever its status, account by account', async () => {
+  describe('variation nette par compte et par mois (§6.7)', () => {
+    it('sums the operations done each month, account by account — not forecasts nor accounting flows', async () => {
       const livret = (await dataService.createAccount({ name: 'Livret A', initialBalance: 0 })).id;
       await record('Restaurant', -10, '2026-01-05');
-      await record('Restaurant', -10, '2026-01-06', 'prevision');
-      await record('Restaurant', -10, '2026-01-07', 'flux_comptable');
-      await record('Restaurant', -10, '2026-12-31', 'pointe');
+      await record('Salaire/Intérêts/Avantages', 40.5, '2026-01-06', 'pointe');
+      await record('Restaurant', -99, '2026-01-06', 'prevision');
+      await record('Virement', -300, '2026-01-07', 'flux_comptable');
+      await record('Restaurant', -12.25, '2026-12-31', 'pointe');
       await record('Restaurant', -10, '2025-12-31');
       await record('Salaire/Intérêts/Avantages', 3, '2026-06-30', 'pointe', livret);
 
-      const counts = await dataService.getOperationCountsByMonth(2026);
+      const changes = await dataService.getNetChangesByMonth(2026);
 
-      expect(counts.map((c) => [c.account.name, c.counts, c.total])).toEqual([
-        ['Compte courant', at({ 0: 3, 11: 1 }), 4],
-        ['Livret A', at({ 5: 1 }), 1],
+      expect(changes.map((c) => [c.account.name, c.changes, c.total])).toEqual([
+        ['Compte courant', at({ 0: 30.5, 11: -12.25 }), 18.25],
+        ['Livret A', at({ 5: 3 }), 3],
       ]);
     });
 
     it('keeps an archived account only if it had operations that year', async () => {
       const ancien = (await dataService.createAccount({ name: 'Ancien livret', initialBalance: 0 })).id;
       const vide = (await dataService.createAccount({ name: 'Compte fermé', initialBalance: 0 })).id;
+      const prevu = (await dataService.createAccount({ name: 'Compte prévu', initialBalance: 0 })).id;
       await record('Restaurant', -10, '2026-03-01', 'pointe', ancien);
       await record('Restaurant', -10, '2025-03-01', 'pointe', vide);
+      await record('Restaurant', -10, '2026-03-01', 'prevision', prevu);
       await dataService.archiveAccount(ancien);
       await dataService.archiveAccount(vide);
+      await dataService.archiveAccount(prevu);
 
-      const counts = await dataService.getOperationCountsByMonth(2026);
+      const changes = await dataService.getNetChangesByMonth(2026);
 
-      expect(counts.map((c) => c.account.name)).toEqual(['Compte courant', 'Ancien livret']);
+      expect(changes.map((c) => [c.account.name, c.total])).toEqual([
+        ['Compte courant', 0],
+        ['Ancien livret', -10],
+        ['Compte prévu', 0],
+      ]);
     });
   });
 
@@ -167,7 +175,7 @@ describe('dataService — bilan annuel (#25)', () => {
       expect(series.real).toEqual([1500, 1435, 1435, 1335, 1335, 1335, 1335, 1335, 1335, 1335, 1335, 1335]);
     });
 
-    it('keeps the same accounts as the operation counts', async () => {
+    it('keeps the same accounts as the net changes', async () => {
       const ancien = (await dataService.createAccount({ name: 'Ancien livret', initialBalance: 50 })).id;
       await dataService.createAccount({ name: 'Compte fermé', initialBalance: 0 }).then((a) =>
         dataService.archiveAccount(a.id)
