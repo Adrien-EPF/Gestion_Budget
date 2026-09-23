@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { BalanceLineChart } from '../components/charts/BalanceLineChart';
-import { BudgetComparisonChart } from '../components/charts/BudgetComparisonChart';
+import { BudgetYearChart } from '../components/charts/BudgetYearChart';
 import { CategoryBreakdownChart } from '../components/charts/CategoryBreakdownChart';
 import { groupExpenses, type ExpenseGroup } from '../components/charts/chartGeometry';
+import { Chips } from '../components/Chips';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { YearTable, type YearTableRow } from '../components/YearTable';
 import { monthName } from '../navigation/formatMonthLabel';
-import type { CategoryYearFlow, YearStatus } from '../services/dataService';
+import type { BudgetYearOverview, CategoryYearFlow, YearStatus } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
 import {
   CHART_ACCOUNT_COLORS,
@@ -25,6 +26,8 @@ interface YearReportScreenProps {
   /** The year Accueil was showing; the selector moves from there. */
   initialYear: number;
   onClose: () => void;
+  /** « Créer un budget » when no budget is followed that year: leaves the Bilan for Budgets. */
+  onCreateBudget: () => void;
 }
 
 /**
@@ -33,13 +36,13 @@ interface YearReportScreenProps {
  * Réglages sub-screens, rather than a 6th tab. Each chart sits in its own
  * card above the month-by-month table it sums up.
  */
-export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps) {
+export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearReportScreenProps) {
   const [year, setYear] = useState(initialYear);
   const status = useServiceQuery((s) => s.getYearStatus(year), [year]);
   const flows = useServiceQuery((s) => s.getCategoryFlowsByMonth(year), [year]);
   const counts = useServiceQuery((s) => s.getOperationCountsByMonth(year), [year]);
   const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
-  const budgetYear = useServiceQuery((s) => s.getBudgetYearComparison(year), [year]);
+  const budgetYear = useServiceQuery((s) => s.getBudgetYear(year), [year]);
 
   // The year Accueil was on stays reachable, even outside the years with data.
   const firstYear = Math.min(status?.firstYear ?? year, initialYear);
@@ -152,15 +155,12 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
 
               <Section title="Budgets · prévu et réalisé">
                 {budgetYear && budgetYear.budgets.length > 0 ? (
-                  <BudgetComparisonChart
-                    testID="budget-comparison"
-                    items={budgetYear.budgets.map(({ budget, ...comparison }) => ({
-                      label: budget.categoryName,
-                      ...comparison,
-                    }))}
-                  />
+                  <BudgetSection key={year} overview={budgetYear} />
                 ) : (
-                  <EmptyCard text="Aucun budget suivi cette année." />
+                  <View style={[styles.card, styles.emptyYear]}>
+                    <Text style={[textStyle('bodyMd'), styles.mute, styles.centered]}>Aucun budget suivi cette année.</Text>
+                    <Button label="Créer un budget" variant="ghost" onPress={onCreateBudget} />
+                  </View>
                 )}
               </Section>
 
@@ -197,6 +197,28 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
         </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+/** The Bilan compares its budgets one at a time, picked from chips at the top of the card. */
+function BudgetSection({ overview }: { overview: BudgetYearOverview }) {
+  const [budgetId, setBudgetId] = useState(overview.budgets[0].budget.id);
+  const shown = overview.budgets.find((b) => b.budget.id === budgetId) ?? overview.budgets[0];
+  return (
+    <BudgetYearChart
+      key={shown.budget.id}
+      testID="budget-year"
+      budgetYear={shown}
+      lastMonth={overview.lastMonth}
+      controls={
+        <Chips
+          scroll
+          value={shown.budget.id}
+          onChange={setBudgetId}
+          options={overview.budgets.map(({ budget }) => ({ value: budget.id, label: budget.categoryName }))}
+        />
+      }
+    />
   );
 }
 

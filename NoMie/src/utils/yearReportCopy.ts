@@ -28,8 +28,8 @@ export function formatShare(share: number): string {
   return share < 0.01 ? `<1${NBSP}%` : `${Math.round(share * 100)}${NBSP}%`;
 }
 
-/** « d’octobre », « de décembre ». */
-const fromMonth = (month: number) => (/^[aeiouy]/.test(lower(month)) ? `d’${lower(month)}` : `de ${lower(month)}`);
+/** « d’octobre », « de décembre » — the elided form before a vowel. */
+export const fromMonth = (month: number) => (/^[aeiouy]/.test(lower(month)) ? `d’${lower(month)}` : `de ${lower(month)}`);
 
 /** « Fin septembre », title of the balance reading. */
 export const monthEndLabel = (month: number) => `Fin ${lower(month)}`;

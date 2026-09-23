@@ -203,7 +203,14 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
       />
       {/* Mounted only while open, so it starts again on Accueil's year each time. */}
       {yearReportOpen ? (
-        <YearReportScreen initialYear={year} onClose={() => setYearReportOpen(false)} />
+        <YearReportScreen
+          initialYear={year}
+          onClose={() => setYearReportOpen(false)}
+          onCreateBudget={() => {
+            setYearReportOpen(false);
+            navigation.navigate('Budgets');
+          }}
+        />
       ) : null}
     </Screen>
   );

@@ -1,4 +1,6 @@
 import { act, screen, within } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
+import { colors } from '../theme/tokens';
 import { monthName } from '../navigation/formatMonthLabel';
 import type { DataService } from '../services/dataService';
 import { formatAmount } from '../utils/formatAmount';
@@ -124,6 +126,39 @@ describe('Écran Bilan annuel (#25)', () => {
 
     expect(chart.queryByTestId(`balance-chart-reading-${accountId}`)).toBeNull();
     expect(chart.getByTestId(`balance-chart-reading-${livretId}`)).toBeTruthy();
+  });
+
+  it('compares one budget at a time, month by month, picked from its chip (§6.7)', async () => {
+    await act(async () => {
+      for (const [category, amount] of [['Restaurant', 100], ['Loisir', 50]] as const) {
+        await app.dataService.createBudget({ categoryId: cat[category], amount, startMonth: { year, month: 0 } });
+      }
+    });
+    await record('Restaurant', -130, `${year}-01-12`);
+    await openYearReport();
+
+    const chart = () => within(screen.getByTestId('budget-year'));
+    // Budgets come in category order: Loisir first.
+    expect(chart().getByRole('button', { name: 'Loisir' }).props.accessibilityState.selected).toBe(true);
+    expect(chart().getByText('Rien de dépensé ici cette année.')).toBeTruthy();
+
+    await press(chart().getByRole('button', { name: 'Restaurant' }));
+
+    expect(chart().getByRole('button', { name: 'Restaurant' }).props.accessibilityState.selected).toBe(true);
+    expect(StyleSheet.flatten(chart().getByTestId('budget-year-bar-0').props.style).backgroundColor).toBe(
+      colors.budgetWatch
+    );
+  });
+
+  it('offers to create a budget when none is followed that year', async () => {
+    await record('Restaurant', -30, `${year}-01-12`);
+    await openYearReport();
+    expect(screen.getByText('Aucun budget suivi cette année.')).toBeTruthy();
+
+    await press(screen.getByRole('button', { name: 'Créer un budget' }));
+
+    expect(screen.queryByTestId('year-report-title')).toBeNull();
+    expect(screen.getByRole('button', { name: '+ Ajouter un budget' })).toBeTruthy();
   });
 
   it('switches year with the selector', async () => {

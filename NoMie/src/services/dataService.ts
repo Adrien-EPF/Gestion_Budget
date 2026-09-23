@@ -272,22 +272,33 @@ export interface BudgetOverview {
   planned: number;
 }
 
-/** One budget over the months of a year it was in force (#29). */
-export interface BudgetYearComparison {
-  budget: Budget;
-  /** Monthly ceiling × months counted; carry-over only moves money between months. */
-  planned: number;
+/** Where a month stands for a budget on the Bilan annuel: before its start, gone by, or still to come. */
+export type BudgetMonthState = 'not_started' | 'realized' | 'upcoming';
+
+/** One month of a budget over a year (§6.7 graphique 3). */
+export interface BudgetMonth {
+  /** 0-11. */
+  month: number;
+  state: BudgetMonthState;
+  /** 0 before the budget started. */
   spent: number;
-  exceeded: boolean;
-  /** Past 85 % of the plan, like `BudgetProgress.watch`. */
-  watch: boolean;
+  /** `budget.amount` + `carriedOver`; 0 before the budget started. */
+  ceiling: number;
+  /** What the month before left unspent, when carry-over is on and that month has gone by. */
+  carriedOver: number;
+}
+
+/** One budget over the twelve months of a year. */
+export interface BudgetYear {
+  budget: Budget;
+  months: BudgetMonth[];
 }
 
 export interface BudgetYearOverview {
-  /** Last month counted (0-11): December for a past year, the current month for this one; `null` for a year to come. */
+  /** Last month realized (0-11): December for a past year, the current month for this one; `null` for a year to come. */
   lastMonth: number | null;
-  /** Budgets in force during at least one counted month, in category order. */
-  budgets: BudgetYearComparison[];
+  /** Budgets in force during at least one month of the year, in category order. */
+  budgets: BudgetYear[];
 }
 
 /** Above this share of its ceiling a budget is tinted « à surveiller » (handoff §6.3). */
@@ -1338,29 +1349,42 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Walks the months from the budget's start to `month`. With carry-over
-   * on, what was left unspent of last month's ceiling (its own carry
-   * included, never below zero) is added to this month's.
+   * Walks the months from the budget's start through `through`, month by
+   * month. With carry-over on, what was left unspent of a month's ceiling
+   * (its own carry included, never below zero) is added to the next one's
+   * — only from a month gone by when `realizedThrough` is given, since a
+   * month to come has left nothing yet.
    */
+  function walkBudget(
+    budget: Budget,
+    spentByMonth: Map<string, number>,
+    through: MonthRef,
+    realizedThrough?: MonthRef
+  ): Map<string, { spent: number; carriedOver: number; ceiling: number }> {
+    const walk = new Map<string, { spent: number; carriedOver: number; ceiling: number }>();
+    let previous: { key: string; spent: number; ceiling: number } | null = null;
+    for (let current = budget.startMonth; monthKey(current) <= monthKey(through); current = nextMonth(current)) {
+      const key = monthKey(current);
+      const carries =
+        budget.carryOver &&
+        previous !== null &&
+        (realizedThrough === undefined || previous.key <= monthKey(realizedThrough));
+      const carriedOver = carries ? roundToCents(Math.max(0, previous!.ceiling - previous!.spent)) : 0;
+      const ceiling = roundToCents(budget.amount + carriedOver);
+      const spent = spentByMonth.get(key) ?? 0;
+      walk.set(key, { spent, carriedOver, ceiling });
+      previous = { key, spent, ceiling };
+    }
+    return walk;
+  }
+
   async function measureBudget(budget: Budget, month: MonthRef): Promise<BudgetProgress> {
     const spentByMonth = await getCategorySpendByMonth(
       budget.categoryId,
       monthBounds(budget.startMonth)[0],
       monthBounds(month)[1]
     );
-
-    let carriedOver = 0;
-    let ceiling = budget.amount;
-    let spent = spentByMonth.get(monthKey(budget.startMonth)) ?? 0;
-    for (
-      let current = nextMonth(budget.startMonth);
-      monthKey(current) <= monthKey(month);
-      current = nextMonth(current)
-    ) {
-      carriedOver = budget.carryOver ? roundToCents(Math.max(0, ceiling - spent)) : 0;
-      ceiling = roundToCents(budget.amount + carriedOver);
-      spent = spentByMonth.get(monthKey(current)) ?? 0;
-    }
+    const { spent, carriedOver, ceiling } = walkBudget(budget, spentByMonth, month).get(monthKey(month))!;
 
     return {
       budget,
@@ -1399,35 +1423,32 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Budget prévu vs réalisé over `year` (#29): each budget's months in
-   * force, from its start (or January) through December — or through the
-   * current month for this year, so a comparison never counts months
-   * that haven't happened. Spending follows the same rules as Budgets.
+   * Budget prévu vs réalisé over `year`, month by month (§6.7 graphique 3):
+   * each budget in force that year, its twelve months measured with the
+   * same rules as Budgets — carry-over included, from its start even
+   * when that was in an earlier year. A month to come has a ceiling but
+   * nothing spent yet, and carries nothing over to the next.
    */
-  async function getBudgetYearComparison(year: number): Promise<BudgetYearOverview> {
-    const current = now();
-    const lastMonth =
-      year < current.getFullYear() ? 11 : year === current.getFullYear() ? current.getMonth() : null;
-    if (lastMonth === null) return { lastMonth, budgets: [] };
+  async function getBudgetYear(year: number): Promise<BudgetYearOverview> {
+    const lastMonth = lastCountedMonth(year);
+    const december: MonthRef = { year, month: 11 };
+    const realizedThrough: MonthRef = lastMonth === null ? { year: year - 1, month: 11 } : { year, month: lastMonth };
 
-    const last: MonthRef = { year, month: lastMonth };
     const budgets = await Promise.all(
-      (await listBudgetsInForceAt(last)).map(async (budget) => {
-        const first = budget.startMonth.year < year ? { year, month: 0 } : budget.startMonth;
+      (await listBudgetsInForceAt(december)).map(async (budget) => {
         const spentByMonth = await getCategorySpendByMonth(
           budget.categoryId,
-          monthBounds(first)[0],
-          monthBounds(last)[1]
+          monthBounds(budget.startMonth)[0],
+          monthBounds(realizedThrough)[1]
         );
-        const planned = roundToCents(budget.amount * (lastMonth - first.month + 1));
-        const spent = roundToCents([...spentByMonth.values()].reduce((sum, value) => sum + value, 0));
-        return {
-          budget,
-          planned,
-          spent,
-          exceeded: spent > planned,
-          watch: spent > planned * BUDGET_WATCH_THRESHOLD,
-        };
+        const walk = walkBudget(budget, spentByMonth, december, realizedThrough);
+        const months = Array.from({ length: 12 }, (_, month): BudgetMonth => {
+          const measured = walk.get(monthKey({ year, month }));
+          if (!measured) return { month, state: 'not_started', spent: 0, ceiling: 0, carriedOver: 0 };
+          const state = lastMonth !== null && month <= lastMonth ? 'realized' : 'upcoming';
+          return { month, state, ...measured };
+        });
+        return { budget, months };
       })
     );
     return { lastMonth, budgets };
@@ -1904,7 +1925,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     createBudget,
     setBudgetCarryOver,
     getBudgetOverview,
-    getBudgetYearComparison,
+    getBudgetYear,
     generateRecurrences,
     createRecurrenceRule,
     setRecurrenceAutomatic,
