@@ -33,6 +33,7 @@ const AUTH_GATE_TITLE: Record<AuthGateTarget, string> = {
   biometricEnabled: 'Confirme pour désactiver l’empreinte',
 };
 
+const BIOMETRIC_NEEDS_PIN = 'Active d’abord le code PIN : l’empreinte s’appuie dessus si elle échoue.';
 const BIOMETRIC_NO_HARDWARE = 'Cet appareil ne dispose pas de lecteur d’empreinte ni de Face ID.';
 const BIOMETRIC_NOT_ENROLLED =
   'Aucune empreinte ni visage n’est enregistré sur cet appareil. Ajoute-en un dans ses réglages.';
@@ -73,6 +74,10 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
       return;
     }
     setBiometricMessage(null);
+    if (!settings.pinEnabled) {
+      setBiometricMessage(BIOMETRIC_NEEDS_PIN);
+      return;
+    }
     if (!(await securityStore.hasBiometricHardware())) {
       setBiometricMessage(BIOMETRIC_NO_HARDWARE);
       return;

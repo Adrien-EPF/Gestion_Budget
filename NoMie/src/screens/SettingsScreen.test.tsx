@@ -247,7 +247,29 @@ describe('Écran Réglages', () => {
   });
 
   describe('sécurité — empreinte (#23)', () => {
-    it('activating turns the switch on when hardware and enrollment are both available', async () => {
+    const seedPin = () =>
+      act(async () => {
+        await app.securityStore.setPin('1234', [
+          { question: 'firstPet', answer: 'Milo' },
+          { question: 'hometown', answer: 'Nice' },
+        ]);
+        await app.dataService.setSetting('pinEnabled', true);
+      });
+
+    it('requires Code PIN to be active first, and stays off with an explicit message otherwise', async () => {
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+
+      expect(
+        await screen.findByText('Active d’abord le code PIN : l’empreinte s’appuie dessus si elle échoue.')
+      ).toBeTruthy();
+      expect(isOn('Empreinte')).toBe(false);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(false);
+    });
+
+    it('activating turns the switch on when Code PIN is active and hardware and enrollment are both available', async () => {
+      await seedPin();
       await openSettings();
 
       await press(screen.getByLabelText('Empreinte'));
@@ -257,6 +279,7 @@ describe('Écran Réglages', () => {
     });
 
     it('shows an explicit message and stays off when the device has no biometric hardware', async () => {
+      await seedPin();
       app.securityStore.setBiometricHardware(false);
       await openSettings();
 
@@ -270,6 +293,7 @@ describe('Écran Réglages', () => {
     });
 
     it('shows an explicit message and stays off when nothing is enrolled', async () => {
+      await seedPin();
       app.securityStore.setBiometricEnrolled(false);
       await openSettings();
 
@@ -297,14 +321,8 @@ describe('Écran Réglages', () => {
 
     it('falls back to the PIN when biometric authentication fails, and disables only Empreinte', async () => {
       app.securityStore.setBiometricAnswer(false);
-      await act(async () => {
-        await app.securityStore.setPin('1234', [
-          { question: 'firstPet', answer: 'Milo' },
-          { question: 'hometown', answer: 'Nice' },
-        ]);
-        await app.dataService.setSetting('pinEnabled', true);
-        await app.dataService.setSetting('biometricEnabled', true);
-      });
+      await seedPin();
+      await app.dataService.setSetting('biometricEnabled', true);
       await openSettings();
 
       await press(screen.getByLabelText('Empreinte'));
