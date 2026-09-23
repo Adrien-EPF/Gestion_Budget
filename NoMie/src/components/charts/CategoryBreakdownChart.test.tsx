@@ -42,8 +42,9 @@ describe('CategoryBreakdownChart', () => {
       { name: 'Restaurant', byMonth: { 0: 75 } },
     ]);
 
-    expect(style('chart-segment-Restaurant')).toMatchObject({ width: '75%', backgroundColor: colors.chart1 });
-    expect(style('chart-segment-Loisir')).toMatchObject({ width: '25%', backgroundColor: colors.chart2 });
+    // Shares as flex weights: the 2px gaps come out of the bar, never pushing the last segment out.
+    expect(style('chart-segment-Restaurant')).toMatchObject({ flex: 0.75, backgroundColor: colors.chart1 });
+    expect(style('chart-segment-Loisir')).toMatchObject({ flex: 0.25, backgroundColor: colors.chart2 });
     const first = within(screen.getByTestId('chart-row-Restaurant'));
     expect(first.getByText('75 %')).toBeTruthy();
     expect(first.getByText(plain(formatAmount(75)))).toBeTruthy();

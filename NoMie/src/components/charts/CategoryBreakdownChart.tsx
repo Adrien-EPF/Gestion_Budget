@@ -44,7 +44,7 @@ export function CategoryBreakdownChart({ testID, year, groups, lastMonth }: Cate
           <View
             key={g.key}
             testID={`${testID}-segment-${g.key}`}
-            style={[styles.segment, { width: `${g.share * 100}%`, backgroundColor: g.color }]}
+            style={[styles.segment, { flex: g.share, backgroundColor: g.color }]}
           />
         ))}
       </View>
