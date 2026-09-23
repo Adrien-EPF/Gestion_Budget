@@ -6,6 +6,8 @@ import { FileSharerProvider } from '../files/FileSharerContext';
 import { RootNavigator } from '../navigation/RootNavigator';
 import { createInMemoryScheduler, type InMemoryScheduler } from '../notifications/inMemoryScheduler';
 import { NotificationSchedulerProvider } from '../notifications/NotificationSchedulerContext';
+import { createInMemorySecurityStore, type InMemorySecurityStore } from '../security/inMemorySecurityStore';
+import { SecurityStoreProvider } from '../security/SecurityStoreContext';
 import { DataServiceProvider } from '../services/DataServiceContext';
 import { createDataService } from '../services/dataService';
 import { createTestDataService } from './createTestDataService';
@@ -63,6 +65,7 @@ export async function renderApp(
     reopenOn?: SqlDatabase;
     scheduler?: InMemoryScheduler;
     fileSharer?: InMemoryFileSharer;
+    securityStore?: InMemorySecurityStore;
     /** Text that shows the first screen has painted; Accueil's unless the app opens elsewhere. */
     firstScreenText?: string;
   } = {}
@@ -72,6 +75,7 @@ export async function renderApp(
   let close: () => Promise<void>;
   const scheduler = options.scheduler ?? createInMemoryScheduler({ granted: true });
   const fileSharer = options.fileSharer ?? createInMemoryFileSharer();
+  const securityStore = options.securityStore ?? createInMemorySecurityStore();
   if (options.reopenOn) {
     db = options.reopenOn;
     dataService = createDataService(db);
@@ -84,7 +88,9 @@ export async function renderApp(
     <DataServiceProvider dataService={dataService}>
       <NotificationSchedulerProvider scheduler={scheduler}>
         <FileSharerProvider fileSharer={fileSharer}>
-          <RootNavigator />
+          <SecurityStoreProvider securityStore={securityStore}>
+            <RootNavigator />
+          </SecurityStoreProvider>
         </FileSharerProvider>
       </NotificationSchedulerProvider>
     </DataServiceProvider>
@@ -97,6 +103,7 @@ export async function renderApp(
     db,
     scheduler,
     fileSharer,
+    securityStore,
     teardown: async () => {
       await settle();
       cleanup();

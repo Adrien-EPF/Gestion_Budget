@@ -10,6 +10,9 @@ import type { TabScreenProps } from '../navigation/types';
 import { DevNotificationTest } from '../notifications/DevNotificationTest';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
 import { isNotificationSetting, setNotificationSetting } from '../notifications/reconcile';
+import { LockScreen } from '../security/LockScreen';
+import { PinSetupSheet } from '../security/PinSetupSheet';
+import { useSecurityStore } from '../security/SecurityStoreContext';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import type { SettingKey } from '../services/dataService';
 import { colors, spacing, textStyle } from '../theme/tokens';
@@ -17,17 +20,34 @@ import { toIsoDate } from '../utils/dates';
 import { describeAccounts, describeAdvances, describeCategories } from '../utils/settingsCopy';
 
 /**
- * Réglages (handoff §6.5). Every switch persists through the data service;
- * the notification switches also plan or cancel the matching notification. The
- * other actions (lock, backup, export, import) are not built yet, so those rows only hold state or sit inert (#3 « Hors périmètre »).
+ * Réglages (handoff §6.5). Most switches persist straight through the data
+ * service; the notification switches also plan or cancel the matching
+ * notification. Code PIN and Empreinte are real actions instead (#23):
+ * enabling one runs it through `PinSetupSheet` or an availability check,
+ * disabling either requires the `LockScreen` re-authentication gate first.
  */
+type AuthGateTarget = 'pinEnabled' | 'biometricEnabled';
+
+const AUTH_GATE_TITLE: Record<AuthGateTarget, string> = {
+  pinEnabled: 'Confirme pour désactiver le code PIN',
+  biometricEnabled: 'Confirme pour désactiver l’empreinte',
+};
+
+const BIOMETRIC_NO_HARDWARE = 'Cet appareil ne dispose pas de lecteur d’empreinte ni de Face ID.';
+const BIOMETRIC_NOT_ENROLLED =
+  'Aucune empreinte ni visage n’est enregistré sur cet appareil. Ajoute-en un dans ses réglages.';
+
 export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
   const dataService = useDataService();
   const scheduler = useNotificationScheduler();
   const fileSharer = useFileSharer();
+  const securityStore = useSecurityStore();
   const settings = useServiceQuery((s) => s.getSettings());
   const structure = useServiceQuery((s) => s.getStructureSummary());
   const [pendingImport, setPendingImport] = useState<PickedFile | null>(null);
+  const [pinSetupVisible, setPinSetupVisible] = useState(false);
+  const [authGate, setAuthGate] = useState<AuthGateTarget | null>(null);
+  const [biometricMessage, setBiometricMessage] = useState<string | null>(null);
 
   if (!settings || !structure) return <Screen title="Réglages">{null}</Screen>;
 
@@ -38,6 +58,37 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
         ? setNotificationSetting(dataService, scheduler, key, value)
         : dataService.setSetting(key, value),
   });
+
+  const onPinToggle = (value: boolean) => {
+    if (value) {
+      setPinSetupVisible(true);
+    } else {
+      setAuthGate('pinEnabled');
+    }
+  };
+
+  const onBiometricToggle = async (value: boolean) => {
+    if (!value) {
+      setAuthGate('biometricEnabled');
+      return;
+    }
+    setBiometricMessage(null);
+    if (!(await securityStore.hasBiometricHardware())) {
+      setBiometricMessage(BIOMETRIC_NO_HARDWARE);
+      return;
+    }
+    if (!(await securityStore.isBiometricEnrolled())) {
+      setBiometricMessage(BIOMETRIC_NOT_ENROLLED);
+      return;
+    }
+    await dataService.setSetting('biometricEnabled', true);
+  };
+
+  const confirmAuthGate = async () => {
+    if (!authGate) return;
+    await dataService.setSetting(authGate, false);
+    setAuthGate(null);
+  };
 
   const datedFilename = (prefix: string, extension: string) =>
     `${prefix}-${toIsoDate(new Date())}.${extension}`;
@@ -70,9 +121,12 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
     <Screen title="Réglages">
       <ScrollView contentContainerStyle={styles.content}>
         <SettingsGroup title="Sécurité" note="L’app se verrouille dès qu’elle passe en arrière-plan.">
-          <SwitchRow label="Code PIN" {...switchProps('pinEnabled')} />
-          <SwitchRow label="Empreinte" {...switchProps('biometricEnabled')} />
+          <SwitchRow label="Code PIN" value={settings.pinEnabled} onValueChange={onPinToggle} />
+          <SwitchRow label="Empreinte" value={settings.biometricEnabled} onValueChange={onBiometricToggle} />
         </SettingsGroup>
+        {biometricMessage ? (
+          <Text style={[textStyle('bodySm'), styles.biometricMessage]}>{biometricMessage}</Text>
+        ) : null}
 
         <SettingsGroup title="Structure">
           <LinkRow
@@ -123,6 +177,16 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
         </Text>
       </ScrollView>
       <ImportBackupSheet file={pendingImport} onClose={() => setPendingImport(null)} />
+      <PinSetupSheet visible={pinSetupVisible} onClose={() => setPinSetupVisible(false)} />
+      {authGate ? (
+        <LockScreen
+          biometricEnabled={settings.biometricEnabled}
+          securityStore={securityStore}
+          onUnlock={confirmAuthGate}
+          title={AUTH_GATE_TITLE[authGate]}
+          onCancel={() => setAuthGate(null)}
+        />
+      ) : null}
     </Screen>
   );
 }
@@ -137,5 +201,8 @@ const styles = StyleSheet.create({
   footer: {
     color: colors.ash,
     textAlign: 'center',
+  },
+  biometricMessage: {
+    color: colors.amountNegative,
   },
 });

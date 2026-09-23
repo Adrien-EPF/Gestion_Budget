@@ -1,9 +1,9 @@
-import { act, cleanup, screen } from '@testing-library/react-native';
+import { act, cleanup, screen, within } from '@testing-library/react-native';
 import { createInMemoryScheduler } from '../notifications/inMemoryScheduler';
 import type { SettingKey } from '../services/dataService';
 import { createTestDataService } from '../test-utils/createTestDataService';
 import { formatAmount } from '../utils/formatAmount';
-import { plain, press, renderApp, settle } from '../test-utils/renderWithApp';
+import { plain, press, renderApp, settle, typeInto } from '../test-utils/renderWithApp';
 
 describe('Écran Réglages', () => {
   let app: Awaited<ReturnType<typeof renderApp>>;
@@ -47,8 +47,6 @@ describe('Écran Réglages', () => {
 
   describe('interrupteurs', () => {
     const switches: [string, SettingKey][] = [
-      ['Code PIN', 'pinEnabled'],
-      ['Empreinte', 'biometricEnabled'],
       ['Rappel de pointage', 'checkReminderEnabled'],
       ['Point budget mensuel', 'monthlyBudgetReviewEnabled'],
       ['Clavier en montants arrondis', 'roundedKeypad'],
@@ -56,7 +54,9 @@ describe('Écran Réglages', () => {
 
     it('start off', async () => {
       await openSettings();
-      for (const [label] of switches) expect(isOn(label)).toBe(false);
+      for (const label of ['Code PIN', 'Empreinte', ...switches.map(([l]) => l)]) {
+        expect(isOn(label)).toBe(false);
+      }
     });
 
     it.each(switches)('%s flips on and off, and is saved in the data service', async (label, key) => {
@@ -69,13 +69,6 @@ describe('Écran Réglages', () => {
       await press(screen.getByLabelText(label));
       expect(isOn(label)).toBe(false);
       expect((await app.dataService.getSettings())[key]).toBe(false);
-    });
-
-    it('flips one at a time', async () => {
-      await openSettings();
-      await press(screen.getByLabelText('Code PIN'));
-      expect(isOn('Code PIN')).toBe(true);
-      expect(isOn('Empreinte')).toBe(false);
     });
 
     it('show the saved state when the screen is opened', async () => {
@@ -92,7 +85,13 @@ describe('Écran Réglages', () => {
 
     it('are still in their state after the app is relaunched', async () => {
       await openSettings();
-      await press(screen.getByLabelText('Code PIN'));
+      await act(async () => {
+        await app.securityStore.setPin('1234', [
+          { question: 'firstPet', answer: 'Milo' },
+          { question: 'hometown', answer: 'Nice' },
+        ]);
+        await app.dataService.setSetting('pinEnabled', true);
+      });
       await press(screen.getByLabelText('Rappel de pointage'));
       await settle();
       cleanup();
@@ -105,13 +104,217 @@ describe('Écran Réglages', () => {
       expect(isOn('Rappel de pointage')).toBe(true);
       expect(isOn('Empreinte')).toBe(false);
     });
+  });
 
-    it('do nothing else: no lock, no file', async () => {
+  describe('sécurité — code PIN (#23)', () => {
+    const enterPin = async (...keys: string[]) => {
+      for (const key of keys) await press(screen.getByLabelText(key));
+    };
+
+    const answerQuestions = async () => {
+      await press(within(screen.getByTestId('question-a-options')).getByLabelText('Nom de votre premier animal'));
+      await typeInto(screen.getByLabelText('Réponse à la première question'), 'Milo');
+      await press(within(screen.getByTestId('question-b-options')).getByLabelText('Ville où vous avez grandi'));
+      await typeInto(screen.getByLabelText('Réponse à la deuxième question'), 'Nice');
+    };
+
+    it('activating opens the PIN creation flow; the switch stays off until it completes', async () => {
+      await openSettings();
+
+      await press(screen.getByLabelText('Code PIN'));
+
+      expect(await screen.findByText('Crée ton code PIN')).toBeTruthy();
+      expect(isOn('Code PIN')).toBe(false);
+    });
+
+    it('creating a PIN, confirming it and answering two questions turns the switch on and persists everything', async () => {
       await openSettings();
       await press(screen.getByLabelText('Code PIN'));
-      // Still on the same screen, nothing asked, nothing blocked.
-      expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
-      expect(screen.getByLabelText('Nouvelle opération')).toBeTruthy();
+      await screen.findByText('Crée ton code PIN');
+
+      await enterPin('1', '2', '3', '4');
+      expect(await screen.findByText('Confirme ton code PIN')).toBeTruthy();
+
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Questions de secours');
+      await answerQuestions();
+      await press(screen.getByRole('button', { name: 'Valider' }));
+
+      expect(screen.queryByText('Questions de secours')).toBeNull();
+      expect(isOn('Code PIN')).toBe(true);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(true);
+      expect(await app.securityStore.verifyPin('1234')).toBe(true);
+      expect(await app.securityStore.getSecurityQuestions()).toEqual(['firstPet', 'hometown']);
+    });
+
+    it('a mismatched confirmation shows an error and restarts entry without turning the switch on', async () => {
+      await openSettings();
+      await press(screen.getByLabelText('Code PIN'));
+      await screen.findByText('Crée ton code PIN');
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Confirme ton code PIN');
+
+      await enterPin('9', '9', '9', '9');
+
+      expect(await screen.findByText('Crée ton code PIN')).toBeTruthy();
+      expect(screen.getByText('Les deux codes ne correspondaient pas, recommence.')).toBeTruthy();
+      expect(isOn('Code PIN')).toBe(false);
+
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Confirme ton code PIN');
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Questions de secours');
+      await answerQuestions();
+      await press(screen.getByRole('button', { name: 'Valider' }));
+
+      expect(isOn('Code PIN')).toBe(true);
+    });
+
+    it('cancelling at PIN creation leaves the switch off and saves nothing', async () => {
+      await openSettings();
+      await press(screen.getByLabelText('Code PIN'));
+      await screen.findByText('Crée ton code PIN');
+
+      await press(screen.getByRole('button', { name: 'Annuler' }));
+
+      expect(screen.queryByText('Crée ton code PIN')).toBeNull();
+      expect(isOn('Code PIN')).toBe(false);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(false);
+    });
+
+    it('cancelling at the security questions step leaves the switch off and saves nothing', async () => {
+      await openSettings();
+      await press(screen.getByLabelText('Code PIN'));
+      await screen.findByText('Crée ton code PIN');
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Confirme ton code PIN');
+      await enterPin('1', '2', '3', '4');
+      await screen.findByText('Questions de secours');
+
+      await press(screen.getByRole('button', { name: 'Annuler' }));
+
+      expect(screen.queryByText('Questions de secours')).toBeNull();
+      expect(isOn('Code PIN')).toBe(false);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(false);
+      expect(await app.securityStore.hasPin()).toBe(false);
+    });
+
+    it('disabling requires successful PIN authentication before it commits', async () => {
+      await act(async () => {
+        await app.securityStore.setPin('1234', [
+          { question: 'firstPet', answer: 'Milo' },
+          { question: 'hometown', answer: 'Nice' },
+        ]);
+        await app.dataService.setSetting('pinEnabled', true);
+      });
+      await openSettings();
+
+      await press(screen.getByLabelText('Code PIN'));
+      expect(await screen.findByText('Confirme pour désactiver le code PIN')).toBeTruthy();
+      expect(isOn('Code PIN')).toBe(true);
+
+      await enterPin('9', '9', '9', '9');
+      expect(screen.getByText('Code incorrect, réessaie.')).toBeTruthy();
+      expect(isOn('Code PIN')).toBe(true);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(true);
+
+      await enterPin('1', '2', '3', '4');
+
+      expect(screen.queryByText('Confirme pour désactiver le code PIN')).toBeNull();
+      expect(isOn('Code PIN')).toBe(false);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(false);
+    });
+
+    it('cancelling the disable confirmation leaves the switch on', async () => {
+      await act(async () => {
+        await app.securityStore.setPin('1234', [
+          { question: 'firstPet', answer: 'Milo' },
+          { question: 'hometown', answer: 'Nice' },
+        ]);
+        await app.dataService.setSetting('pinEnabled', true);
+      });
+      await openSettings();
+
+      await press(screen.getByLabelText('Code PIN'));
+      await screen.findByText('Confirme pour désactiver le code PIN');
+
+      await press(screen.getByRole('button', { name: 'Annuler' }));
+
+      expect(screen.queryByText('Confirme pour désactiver le code PIN')).toBeNull();
+      expect(isOn('Code PIN')).toBe(true);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(true);
+    });
+  });
+
+  describe('sécurité — empreinte (#23)', () => {
+    it('activating turns the switch on when hardware and enrollment are both available', async () => {
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+
+      expect(isOn('Empreinte')).toBe(true);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(true);
+    });
+
+    it('shows an explicit message and stays off when the device has no biometric hardware', async () => {
+      app.securityStore.setBiometricHardware(false);
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+
+      expect(
+        await screen.findByText('Cet appareil ne dispose pas de lecteur d’empreinte ni de Face ID.')
+      ).toBeTruthy();
+      expect(isOn('Empreinte')).toBe(false);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(false);
+    });
+
+    it('shows an explicit message and stays off when nothing is enrolled', async () => {
+      app.securityStore.setBiometricEnrolled(false);
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+
+      expect(
+        await screen.findByText(
+          'Aucune empreinte ni visage n’est enregistré sur cet appareil. Ajoute-en un dans ses réglages.'
+        )
+      ).toBeTruthy();
+      expect(isOn('Empreinte')).toBe(false);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(false);
+    });
+
+    it('disabling requires successful authentication and succeeds automatically via biometrics when available', async () => {
+      await app.dataService.setSetting('biometricEnabled', true);
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+      await settle();
+
+      expect(isOn('Empreinte')).toBe(false);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(false);
+    });
+
+    it('falls back to the PIN when biometric authentication fails, and disables only Empreinte', async () => {
+      app.securityStore.setBiometricAnswer(false);
+      await act(async () => {
+        await app.securityStore.setPin('1234', [
+          { question: 'firstPet', answer: 'Milo' },
+          { question: 'hometown', answer: 'Nice' },
+        ]);
+        await app.dataService.setSetting('pinEnabled', true);
+        await app.dataService.setSetting('biometricEnabled', true);
+      });
+      await openSettings();
+
+      await press(screen.getByLabelText('Empreinte'));
+      await screen.findByText('Confirme pour désactiver l’empreinte');
+      for (const key of ['1', '2', '3', '4']) await press(screen.getByLabelText(key));
+
+      expect(isOn('Empreinte')).toBe(false);
+      expect(isOn('Code PIN')).toBe(true);
+      expect((await app.dataService.getSettings()).biometricEnabled).toBe(false);
+      expect((await app.dataService.getSettings()).pinEnabled).toBe(true);
     });
   });
 

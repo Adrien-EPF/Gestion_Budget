@@ -1,24 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, StyleSheet, Text, View } from 'react-native';
 import { colors, spacing, textStyle } from '../theme/tokens';
-import { PinPad, type PinKey } from './PinPad';
+import { Button } from '../components/Button';
+import { PIN_LENGTH, PinDots, PinPad, type PinKey } from './PinPad';
 import type { SecurityStore } from './security';
-
-const PIN_LENGTH = 4;
 
 interface LockScreenProps {
   biometricEnabled: boolean;
   securityStore: SecurityStore;
   onUnlock: () => void;
+  title?: string;
+  /**
+   * When set, an "Annuler" button lets the caller back out — used when this
+   * screen is reused as a re-authentication gate from Réglages (#23), where
+   * backing out must be possible, unlike the real app-wide lock.
+   */
+  onCancel?: () => void;
 }
 
 /**
  * Full-screen lock (#19 user stories 1-5): tries biometrics automatically
  * when enabled, the PIN pad is always the fallback. A wrong PIN never says
  * which digit is wrong and can be retried without limit. The Android back
- * button is swallowed (`onRequestClose`), so it can't be used to bypass it.
+ * button is swallowed (`onRequestClose`) when there is no `onCancel`, so it
+ * can't be used to bypass the real lock.
  */
-export function LockScreen({ biometricEnabled, securityStore, onUnlock }: LockScreenProps) {
+export function LockScreen({
+  biometricEnabled,
+  securityStore,
+  onUnlock,
+  title = 'NoMie est verrouillé',
+  onCancel,
+}: LockScreenProps) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,19 +75,24 @@ export function LockScreen({ biometricEnabled, securityStore, onUnlock }: LockSc
   };
 
   return (
-    <Modal visible transparent={false} animationType="none" statusBarTranslucent onRequestClose={() => {}}>
+    <Modal
+      visible
+      transparent={false}
+      animationType="none"
+      statusBarTranslucent
+      onRequestClose={onCancel ?? (() => {})}
+    >
       <View style={styles.root}>
         <Image source={require('../../assets/Logo.jpg')} style={styles.logo} />
-        <Text style={[textStyle('headingMd'), styles.title]}>NoMie est verrouillé</Text>
-        <View style={styles.dots}>
-          {Array.from({ length: PIN_LENGTH }).map((_, index) => (
-            <View key={index} style={[styles.dot, index < pin.length && styles.dotFilled]} />
-          ))}
-        </View>
+        <Text style={[textStyle('headingMd'), styles.title]}>{title}</Text>
+        <PinDots length={pin.length} />
         <Text style={[textStyle('bodySm'), styles.error, !error && styles.errorHidden]}>
           Code incorrect, réessaie.
         </Text>
         <PinPad onKeyPress={onKeyPress} disabled={busy} />
+        {onCancel ? (
+          <Button label="Annuler" variant="secondary" onPress={onCancel} style={styles.cancel} />
+        ) : null}
       </View>
     </Modal>
   );
@@ -97,27 +115,14 @@ const styles = StyleSheet.create({
   title: {
     color: colors.ink,
   },
-  dots: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  dot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 1,
-    borderColor: colors.hairlineStrong,
-    backgroundColor: colors.surface,
-  },
-  dotFilled: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
   error: {
     color: colors.amountNegative,
     minHeight: 18,
   },
   errorHidden: {
     opacity: 0,
+  },
+  cancel: {
+    marginTop: spacing.xs,
   },
 });
