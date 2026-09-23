@@ -98,7 +98,11 @@ function AddRecurrenceForm({ onClose }: { onClose: () => void }) {
   return (
     <View style={styles.form}>
       <Text style={[textStyle('headingMd'), styles.title]}>Nouvelle règle</Text>
-      <ScrollView style={{ maxHeight: height * 0.62 }} contentContainerStyle={styles.fields}>
+      <ScrollView
+        style={[styles.scroll, { maxHeight: height * 0.62 }]}
+        contentContainerStyle={styles.fields}
+        keyboardShouldPersistTaps="handled"
+      >
         <TextField
           label="Nom de la règle"
           value={name}
@@ -173,6 +177,11 @@ function AddRecurrenceForm({ onClose }: { onClose: () => void }) {
 const styles = StyleSheet.create({
   form: {
     gap: spacing.sm,
+    // Keyboard open, BottomSheet shrinks: the fields give up the room and scroll.
+    flexShrink: 1,
+  },
+  scroll: {
+    flexShrink: 1,
   },
   title: {
     color: colors.ink,

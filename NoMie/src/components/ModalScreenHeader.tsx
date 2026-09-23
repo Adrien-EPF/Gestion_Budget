@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, textStyle } from '../theme/tokens';
 
 interface ModalScreenHeaderProps {
@@ -16,8 +17,11 @@ interface ModalScreenHeaderProps {
  * closable header instead of a swallowed back button.
  */
 export function ModalScreenHeader({ title, testID, onClose }: ModalScreenHeaderProps) {
+  // The sub-screen `Modal`s are `statusBarTranslucent`: keep the header below the status bar.
+  const { top } = useSafeAreaInsets();
+
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, { height: HEADER_HEIGHT + top, paddingTop: top }]}>
       <Text testID={testID} style={[textStyle('headingMd'), styles.title]}>
         {title}
       </Text>
@@ -28,9 +32,10 @@ export function ModalScreenHeader({ title, testID, onClose }: ModalScreenHeaderP
   );
 }
 
+const HEADER_HEIGHT = 56;
+
 const styles = StyleSheet.create({
   header: {
-    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',

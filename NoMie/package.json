@@ -47,6 +47,9 @@
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo/android"
+    "preset": "jest-expo/android",
+    "setupFiles": [
+      "<rootDir>/jest.setup.ts"
+    ]
   }
 }

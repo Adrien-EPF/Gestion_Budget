@@ -51,6 +51,7 @@ function AddBudgetForm({ onClose }: { onClose: () => void }) {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.chips}
           style={styles.chipsScroll}
         >

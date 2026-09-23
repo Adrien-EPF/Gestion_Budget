@@ -1,7 +1,8 @@
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, textStyle } from '../theme/tokens';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors, spacing, textStyle } from '../theme/tokens';
 
 /**
  * Custom tab bar matching DESIGN.md's tab-bar component exactly (the
@@ -10,8 +11,11 @@ import { colors, textStyle } from '../theme/tokens';
  * icônes ligne" once a real icon set is chosen.
  */
 export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
+  // Edge-to-edge: the bar's surface runs under Android's navigation bar, the tabs stay above it.
+  const { bottom } = useSafeAreaInsets();
+
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { height: BAR_HEIGHT + bottom, paddingBottom: bottom }]}>
       {state.routes.map((route, index) => {
         const { options } = descriptors[route.key];
         const label = (options.title ?? route.name) as string;
@@ -46,7 +50,15 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
                 isFocused && { backgroundColor: colors.primarySoft },
               ]}
             />
-            <Text style={[textStyle('caption'), { color: tint }]}>{label}</Text>
+            {/* « Récurrences » is the longest label: one line, shrunk a little on narrow screens. */}
+            <Text
+              style={[textStyle('caption'), { color: tint }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.8}
+            >
+              {label}
+            </Text>
           </Pressable>
         );
       })}
@@ -54,9 +66,10 @@ export function TabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   );
 }
 
+const BAR_HEIGHT = 64;
+
 const styles = StyleSheet.create({
   bar: {
-    height: 64,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.hairline,
@@ -65,7 +78,10 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    // Pinned to the top, not centered: every icon sits on the same line whatever its label does.
+    justifyContent: 'flex-start',
+    paddingTop: spacing.sm,
+    paddingHorizontal: 2,
     gap: 5,
   },
   iconPlaceholder: {

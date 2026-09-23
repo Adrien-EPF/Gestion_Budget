@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { Button } from '../components/Button';
 import { ForgotPinSheet } from './ForgotPinSheet';
@@ -33,6 +34,7 @@ export function LockScreen({
   title = 'NoMie est verrouillé',
   onCancel,
 }: LockScreenProps) {
+  const insets = useSafeAreaInsets();
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -101,7 +103,7 @@ export function LockScreen({
       statusBarTranslucent
       onRequestClose={onCancel ?? (() => {})}
     >
-      <View style={styles.root}>
+      <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <Image source={require('../../assets/Logo.jpg')} style={styles.logo} />
         <Text style={[textStyle('headingMd'), styles.title]}>{title}</Text>
         {forgotVisible ? null : (

@@ -26,6 +26,15 @@ describe('RootNavigator — chrome commun', () => {
     expect(screen.getByTestId('app-bar-title').props.children).toBe('NoMie');
   });
 
+  it('keeps every tab label on one line, « Récurrences » included (#37)', async () => {
+    ({ teardown } = await renderApp());
+    await screen.findByTestId('app-bar-title');
+
+    for (const label of ['Accueil', 'Comptes', 'Budgets', 'Récurrences', 'Réglages']) {
+      expect(screen.getByText(label).props.numberOfLines).toBe(1);
+    }
+  });
+
   it('changes the shared month when the chevrons are pressed on Accueil', async () => {
     ({ teardown } = await renderApp());
     await screen.findByTestId('app-bar-title');

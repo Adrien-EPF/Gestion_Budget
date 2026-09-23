@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import React from 'react';
 import { Platform, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { FileSharerProvider } from './src/files/FileSharerContext';
 import type { FileSharer } from './src/files/fileSharer';
 import { createWebFileSharer } from './src/files/webFileSharer';
@@ -48,21 +49,23 @@ export default function App() {
   }
 
   return (
-    <AppDataServiceProvider>
-      <NotificationSchedulerProvider scheduler={scheduler}>
-        <FileSharerProvider fileSharer={fileSharer}>
-          <SecurityStoreProvider securityStore={securityStore}>
-            {isWebOrExpoGo ? (
-              <RootNavigator />
-            ) : (
-              <LockGate>
+    <SafeAreaProvider>
+      <AppDataServiceProvider>
+        <NotificationSchedulerProvider scheduler={scheduler}>
+          <FileSharerProvider fileSharer={fileSharer}>
+            <SecurityStoreProvider securityStore={securityStore}>
+              {isWebOrExpoGo ? (
                 <RootNavigator />
-              </LockGate>
-            )}
-          </SecurityStoreProvider>
-        </FileSharerProvider>
-      </NotificationSchedulerProvider>
-      <StatusBar style="dark" />
-    </AppDataServiceProvider>
+              ) : (
+                <LockGate>
+                  <RootNavigator />
+                </LockGate>
+              )}
+            </SecurityStoreProvider>
+          </FileSharerProvider>
+        </NotificationSchedulerProvider>
+        <StatusBar style="dark" />
+      </AppDataServiceProvider>
+    </SafeAreaProvider>
   );
 }

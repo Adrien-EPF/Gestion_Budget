@@ -1,5 +1,6 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { useMonth } from '../navigation/MonthContext';
 import { formatMonthLabel } from '../navigation/formatMonthLabel';
@@ -11,8 +12,11 @@ interface AppBarProps {
 }
 
 export function AppBar({ title, showMonthSelector = false }: AppBarProps) {
+  // Android draws edge-to-edge: the bar's background runs under the status bar, its content stays below it.
+  const { top } = useSafeAreaInsets();
+
   return (
-    <View style={styles.bar}>
+    <View style={[styles.bar, { height: BAR_HEIGHT + top, paddingTop: top }]}>
       <Image source={require('../../assets/Logo.jpg')} style={styles.logo} />
       <Text testID="app-bar-title" style={[textStyle('headingMd'), styles.title]} numberOfLines={1}>
         {title}
@@ -50,9 +54,10 @@ function MonthSelector() {
   );
 }
 
+const BAR_HEIGHT = 56;
+
 const styles = StyleSheet.create({
   bar: {
-    height: 56,
     backgroundColor: colors.canvas,
     flexDirection: 'row',
     alignItems: 'center',
