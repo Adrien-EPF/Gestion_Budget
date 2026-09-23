@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react-native';
+import { act, screen, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { colors } from '../theme/tokens';
 import type { DataService } from '../services/dataService';
@@ -211,6 +211,37 @@ describe('Écran Budgets', () => {
       await press(screen.getByLabelText('Mois suivant'));
       expect(await screen.findByText(plain('0 / 100 €'))).toBeTruthy();
       expect(screen.getByTestId('budgets-spent').props.children).toBe(formatAmount(0));
+    });
+  });
+
+  describe('« Voir l’année » (§6.7)', () => {
+    it('opens the year of the budget’s category, without the category chips, and closes back', async () => {
+      await createBudget('Loisir', 50);
+      await createBudget('Restaurant', 100);
+      await spend('Restaurant', 130);
+      await openBudgets();
+
+      await press(screen.getByRole('button', { name: 'Voir l’année, Restaurant' }));
+
+      expect(screen.getByTestId('budget-year-title').props.children).toBe('Restaurant');
+      expect(screen.getByText(`Prévu et réalisé en ${THIS_MONTH.year}`)).toBeTruthy();
+      const chart = within(screen.getByTestId('budget-detail-chart'));
+      expect(chart.getByTestId(`budget-detail-chart-bar-${THIS_MONTH.month}`)).toBeTruthy();
+      expect(chart.queryByRole('button', { name: 'Loisir' })).toBeNull();
+
+      await press(screen.getByLabelText('Fermer'));
+      expect(screen.queryByTestId('budget-year-title')).toBeNull();
+      expect(screen.getByText('+ Ajouter un budget')).toBeTruthy();
+    });
+
+    it('shows the year of the month being viewed on Budgets', async () => {
+      await createBudget('Restaurant', 100, { startMonth: { year: THIS_MONTH.year - 1, month: 0 } });
+      await openBudgets();
+      for (let i = 0; i <= THIS_MONTH.month; i++) await press(screen.getByLabelText('Mois précédent'));
+
+      await press(screen.getByRole('button', { name: 'Voir l’année, Restaurant' }));
+
+      expect(screen.getByText(`Prévu et réalisé en ${THIS_MONTH.year - 1}`)).toBeTruthy();
     });
   });
 });

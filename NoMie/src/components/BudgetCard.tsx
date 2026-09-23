@@ -4,6 +4,7 @@ import type { BudgetProgress } from '../services/dataService';
 import { useDataService } from '../services/DataServiceContext';
 import { colors, rounded, spacing, textStyle } from '../theme/tokens';
 import { describeBudget, formatBudgetRatio } from '../utils/budgetCopy';
+import { Button } from './Button';
 import { ProgressBar } from './ProgressBar';
 import { Switch } from './Switch';
 
@@ -11,10 +12,12 @@ interface BudgetCardProps {
   progress: BudgetProgress;
   /** The month the budget is measured against, for the wording of its note. */
   month: { year: number; month: number };
+  /** « Voir l’année »: the budget month by month over the year (§6.7). No link without it (Accueil's preview). */
+  onShowYear?: () => void;
 }
 
-/** One budget (handoff §6.3): ratio, bar, factual note, and its own carry-over switch. */
-export function BudgetCard({ progress, month }: BudgetCardProps) {
+/** One budget (handoff §6.3): ratio, bar, factual note, its own carry-over switch, and a way to its year. */
+export function BudgetCard({ progress, month, onShowYear }: BudgetCardProps) {
   const dataService = useDataService();
   const { budget, spent, ceiling, fillRatio, watch } = progress;
 
@@ -49,6 +52,16 @@ export function BudgetCard({ progress, month }: BudgetCardProps) {
           accessibilityLabel={`Report du reliquat, ${budget.categoryName}`}
         />
       </View>
+
+      {onShowYear ? (
+        <Button
+          label="Voir l’année"
+          variant="ghost"
+          accessibilityLabel={`Voir l’année, ${budget.categoryName}`}
+          onPress={onShowYear}
+          style={styles.yearLink}
+        />
+      ) : null}
     </View>
   );
 }
@@ -96,5 +109,10 @@ const styles = StyleSheet.create({
   },
   carryHint: {
     color: colors.ash,
+  },
+  yearLink: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    marginLeft: -spacing.sm,
   },
 });

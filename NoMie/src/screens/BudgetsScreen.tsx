@@ -6,17 +6,19 @@ import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import { Screen } from '../components/Screen';
 import { useMonth } from '../navigation/MonthContext';
-import type { BudgetOverview } from '../services/dataService';
+import type { Budget, BudgetOverview } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
 import { colors, rounded, spacing, textStyle } from '../theme/tokens';
 import { describeMonthProgress, monthElapsedFraction } from '../utils/budgetCopy';
 import { formatAmount } from '../utils/formatAmount';
+import { BudgetYearScreen } from './BudgetYearScreen';
 
 /** Budgets (handoff §6.3): the month at a glance, then one card per budget. */
 export function BudgetsScreen() {
   const { year, month } = useMonth();
   const overview = useServiceQuery((s) => s.getBudgetOverview({ year, month }), [year, month]);
   const [adding, setAdding] = useState(false);
+  const [yearOf, setYearOf] = useState<Budget | null>(null);
 
   if (!overview) return <Screen title="Budgets" showMonthSelector>{null}</Screen>;
 
@@ -27,7 +29,12 @@ export function BudgetsScreen() {
           <>
             <SummaryCard overview={overview} year={year} month={month} />
             {overview.budgets.map((progress) => (
-              <BudgetCard key={progress.budget.id} progress={progress} month={{ year, month }} />
+              <BudgetCard
+                key={progress.budget.id}
+                progress={progress}
+                month={{ year, month }}
+                onShowYear={() => setYearOf(progress.budget)}
+              />
             ))}
           </>
         ) : (
@@ -38,6 +45,7 @@ export function BudgetsScreen() {
         <Button label="+ Ajouter un budget" variant="ghost" onPress={() => setAdding(true)} />
       </ScrollView>
       <AddBudgetSheet visible={adding} onClose={() => setAdding(false)} />
+      {yearOf ? <BudgetYearScreen budget={yearOf} year={year} onClose={() => setYearOf(null)} /> : null}
     </Screen>
   );
 }
