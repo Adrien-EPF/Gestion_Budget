@@ -124,8 +124,11 @@ export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps
                 {expenseGroups.length > 0 ? (
                   <>
                     <CategoryBreakdownChart
+                      key={year}
                       testID="expense-breakdown"
-                      items={expenseGroups.map((g) => ({ label: g.label, amount: g.total }))}
+                      year={year}
+                      groups={expenseGroups}
+                      lastMonth={status.lastMonth ?? 11}
                     />
                     <YearTable
                       testID="year-expenses"

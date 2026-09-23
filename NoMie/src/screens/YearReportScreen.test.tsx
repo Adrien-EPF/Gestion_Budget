@@ -84,7 +84,7 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(real.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
   });
 
-  it('charts the spending of the year by category, largest first (#28)', async () => {
+  it('charts the spending of the year by category, largest first, the first one unfolded (§6.7)', async () => {
     await record('Loisir', -25, `${year}-02-03`);
     await record('Restaurant', -30, `${year}-01-12`);
     await record('Restaurant', -45, `${year}-05-12`);
@@ -92,14 +92,15 @@ describe('Écran Bilan annuel (#25)', () => {
     await openYearReport();
 
     const chart = within(screen.getByTestId('expense-breakdown'));
-    const restaurant = within(chart.getByTestId('expense-breakdown-slice-0'));
+    const restaurant = within(chart.getByTestId('expense-breakdown-row-Restaurant'));
     expect(restaurant.getByText('Restaurant')).toBeTruthy();
     expect(restaurant.getByText(plain(formatAmount(75)))).toBeTruthy();
     expect(restaurant.getByText('75 %')).toBeTruthy();
-    const loisir = within(chart.getByTestId('expense-breakdown-slice-1'));
+    const loisir = within(chart.getByTestId('expense-breakdown-row-Loisir'));
     expect(loisir.getByText('Loisir')).toBeTruthy();
     expect(loisir.getByText('25 %')).toBeTruthy();
     expect(chart.queryByText('Salaire/Intérêts/Avantages')).toBeNull();
+    expect(chart.getByTestId('expense-breakdown-months-Restaurant')).toBeTruthy();
   });
 
 

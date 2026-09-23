@@ -5,39 +5,6 @@
 
 import { CHART_CATEGORY_COLORS, chartColor, colors } from '../../theme/tokens';
 
-export interface BreakdownItem {
-  label: string;
-  amount: number;
-}
-
-export interface BreakdownSlice extends BreakdownItem {
-  /** 0–1 share of the total. */
-  share: number;
-}
-
-export const OTHERS_LABEL = 'Autres catégories';
-
-/**
- * Largest slices first. Past `maxSlices`, the smallest ones are grouped
- * into a single « Autres catégories » slice — unless only one would be
- * left over, which is then shown as itself.
- */
-export function toBreakdown(items: BreakdownItem[], maxSlices = 5): BreakdownSlice[] {
-  const sorted = items.filter((item) => item.amount > 0).sort((a, b) => b.amount - a.amount);
-  const total = sorted.reduce((sum, item) => sum + item.amount, 0);
-  const shown =
-    sorted.length > maxSlices + 1
-      ? [
-          ...sorted.slice(0, maxSlices),
-          {
-            label: OTHERS_LABEL,
-            amount: sorted.slice(maxSlices).reduce((sum, item) => sum + item.amount, 0),
-          },
-        ]
-      : sorted;
-  return shown.map(({ label, amount }) => ({ label, amount, share: amount / total }));
-}
-
 /** One category's spending over the year; `name` is `null` for operations without a category. */
 export interface CategorySeries {
   name: string | null;
