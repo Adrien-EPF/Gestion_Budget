@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#EFECE6;font-family:Inter,system-ui,sans-serif}
+a{color:#3A5F54}a:hover{color:#4C7A6C}
+*{box-sizing:border-box}
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px 16px 40px">
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px;max-width:760px">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;align-items:center">
+      <span style="font-size:12px;font-weight:500;color:#6B6B66">État à prévisualiser</span>
+      <sc-for list="{{ scenarios }}" as="sc" hint-placeholder-count="5">
+        <button onClick="{{ sc.onTap }}" style="font-family:Inter,system-ui,sans-serif;font-size:13px;font-weight:500;border:1px solid {{ sc.bd }};border-radius:999px;padding:7px 14px;cursor:pointer;color:{{ sc.fg }};background:{{ sc.bg }}">{{ sc.label }}</button>
+      </sc-for>
+    </div>
+    <div style="font-size:12px;color:#8C8C86;text-align:center">Budget dans les clous : chip Alimentation · budget dépassé : chip Restaurant</div>
+  </div>
+
+  <x-import component-from-global-scope="AndroidDevice" from="./android-frame.jsx" hint-size="412px,892px">
+  <div style="min-height:100%;background:#FAF8F5;font-family:Inter,system-ui,sans-serif">
+
+    <div style="height:56px;display:flex;align-items:center;padding:0 8px 0 16px">
+      <span style="flex:1;font-size:18px;font-weight:600;color:#232323">Bilan annuel</span>
+      <button style="height:48px;padding:0 12px;border:0;background:transparent;font-family:Inter,system-ui,sans-serif;font-size:15px;font-weight:600;color:#4C7A6C;cursor:pointer">Fermer</button>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;padding:0 16px 4px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <button onClick="{{ prevYear }}" aria-label="Année précédente" style="width:48px;height:48px;border:0;background:transparent;border-radius:999px;font-size:20px;cursor:pointer;color:{{ prevYearColor }}">‹</button>
+        <span style="font-size:22px;font-weight:600;color:#232323;font-variant-numeric:tabular-nums;min-width:64px;text-align:center">{{ year }}</span>
+        <button onClick="{{ nextYear }}" aria-label="Année suivante" style="width:48px;height:48px;border:0;background:transparent;border-radius:999px;font-size:20px;cursor:pointer;color:{{ nextYearColor }}">›</button>
+      </div>
+      <div style="font-size:13px;color:#8C8C86">{{ yearNote }}</div>
+    </div>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="padding:24px 16px 0">
+        <div style="background:#ffffff;border-radius:16px;padding:32px 20px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center">
+          <div style="font-size:16px;font-weight:600;color:#232323">Aucune opération en {{ year }}.</div>
+          <div style="font-size:14px;color:#6B6B66;line-height:1.45;max-width:280px;text-wrap:pretty">Les graphiques et les tableaux apparaîtront dès la première opération saisie sur cette année.</div>
+          <button onClick="{{ nextYear }}" style="height:48px;padding:0 12px;margin-top:4px;border:0;background:transparent;font-family:Inter,system-ui,sans-serif;font-size:15px;font-weight:600;color:#4C7A6C;cursor:pointer">Voir {{ nextYearLabel }}</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ hasData }}" hint-placeholder-val="{{ true }}">
+    <div>
+
+      <div style="padding:24px 16px 0">
+        <div style="font-size:16px;font-weight:600;color:#232323;margin-bottom:12px">Soldes en fin de mois</div>
+        <div style="background:#ffffff;border-radius:16px;padding:16px 20px 8px">
+          <sc-if value="{{ multiAcc }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;background:#F1EEE9;border-radius:999px;padding:4px;height:48px">
+              <sc-for list="{{ modeSeg }}" as="sg" hint-placeholder-count="2">
+                <button onClick="{{ sg.onTap }}" style="flex:1;border:0;border-radius:999px;font-family:Inter,system-ui,sans-serif;font-size:14px;font-weight:500;cursor:pointer;color:{{ sg.fg }};background:{{ sg.bg }}">{{ sg.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <div style="position:relative;height:200px;margin-top:12px">
+            <div style="position:absolute;left:0;right:0;top:20px;bottom:28px">
+              <sc-if value="{{ negBandShow }}" hint-placeholder-val="{{ false }}">
+                <div style="position:absolute;left:0;right:0;bottom:0;height:{{ negBandH }};background:#F6F3EE"></div>
+              </sc-if>
+              <sc-for list="{{ ticks }}" as="t" hint-placeholder-count="4">
+                <div style="position:absolute;left:0;right:0;top:{{ t.top }};border-top:1px solid {{ t.color }}">
+                  <span style="position:absolute;left:0;bottom:3px;font-size:12px;color:#8C8C86;font-variant-numeric:tabular-nums;background:rgba(255,255,255,0.85);padding-right:4px">{{ t.label }}</span>
+                </div>
+              </sc-for>
+              <div style="position:absolute;top:0;bottom:0;width:1px;background:#CFCAC0;left:{{ selX }}"></div>
+              {{ soldeSvg }}
+              <sc-for list="{{ dots }}" as="d" hint-placeholder-count="0">
+                <div style="position:absolute;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:999px;background:#ffffff;border:2px solid {{ d.color }};left:{{ d.left }};top:{{ d.top }}"></div>
+              </sc-for>
+              <div style="position:absolute;inset:0;display:flex">
+                <sc-for list="{{ sMonths }}" as="ml" hint-placeholder-count="12">
+                  <button onClick="{{ ml.onTap }}" aria-label="{{ ml.aria }}" style="flex:1;height:100%;border:0;background:transparent;padding:0;cursor:pointer"></button>
+                </sc-for>
+              </div>
+            </div>
+            <div style="position:absolute;left:0;right:0;bottom:0;height:20px;display:flex">
+              <sc-for list="{{ sMonths }}" as="ml" hint-placeholder-count="12">
+                <div style="flex:1;text-align:center;font-size:12px;font-weight:{{ ml.w }};color:{{ ml.c }}">{{ ml.t }}</div>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-if value="{{ multiAcc }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-wrap:wrap;column-gap:4px;margin-top:4px">
+              <sc-for list="{{ accChips }}" as="ch" hint-placeholder-count="3">
+                <button onClick="{{ ch.onTap }}" style="height:48px;border:0;background:transparent;padding:0;cursor:pointer;font-family:Inter,system-ui,sans-serif">
+                  <span style="display:flex;align-items:center;gap:8px;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:500;color:{{ ch.fg }};background:{{ ch.bg }}">
+                    <span style="width:12px;height:3px;border-radius:2px;background:{{ ch.color }};opacity:{{ ch.op }}"></span>{{ ch.label }}
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="font-size:13px;color:#8C8C86;margin-bottom:4px">{{ chipHint }}</div>
+          </sc-if>
+          <sc-if value="{{ singleAcc }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:8px;font-size:13px;color:#6B6B66">
+              <span style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:0;border-top:2px solid #4C7A6C"></span>Réel</span>
+              <span style="display:flex;align-items:center;gap:8px"><span style="width:16px;height:0;border-top:2px dashed #4C7A6C"></span>Pointé</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ showPrevLegend }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#8C8C86;margin-top:8px">
+              <span style="width:16px;height:0;border-top:2px solid rgba(76,122,108,0.4)"></span>Trait plus clair : prévisions d’octobre à décembre
+            </div>
+          </sc-if>
+
+          <div style="border-top:1px solid #E7E3DC;margin-top:12px">
+            <div style="display:flex;align-items:center">
+              <button onClick="{{ sPrev }}" aria-label="Mois précédent" style="width:48px;height:48px;border:0;background:transparent;font-size:18px;cursor:pointer;color:{{ sPrevColor }}">‹</button>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px">
+                <span style="font-size:14px;font-weight:600;color:#232323">{{ sTitle }}</span>
+                <sc-if value="{{ sIsFuture }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:12px;font-weight:500;color:#8B7CA6;background:#ECE7F2;border-radius:999px;padding:3px 10px">Prévision</span>
+                </sc-if>
+              </div>
+              <button onClick="{{ sNext }}" aria-label="Mois suivant" style="width:48px;height:48px;border:0;background:transparent;font-size:18px;cursor:pointer;color:{{ sNextColor }}">›</button>
+            </div>
+            <sc-for list="{{ readRows }}" as="rr" hint-placeholder-count="3">
+              <div style="display:flex;align-items:center;gap:10px;min-height:48px;border-top:1px solid #E7E3DC">
+                <span style="width:8px;height:8px;border-radius:999px;background:{{ rr.color }}"></span>
+                <span style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#232323">{{ rr.name }}</span>
+                <div style="text-align:right">
+                  <div style="font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;color:{{ rr.vColor }}">{{ rr.value }}</div>
+                  <div style="font-size:13px;color:#8C8C86;font-variant-numeric:tabular-nums">{{ rr.sub }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ negNote }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:13px;color:#6B6B66;line-height:1.4;padding:4px 0 12px;text-wrap:pretty">{{ negNote }}</div>
+          </sc-if>
+        </div>
+
+        <sc-if value="{{ showTables }}" hint-placeholder-val="{{ true }}">
+        <div style="background:#ffffff;border-radius:16px;overflow:hidden;margin-top:12px">
+          <div style="overflow-x:auto">
+            <div style="display:flex;min-width:max-content;height:40px;align-items:center">
+              <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;height:40px;background:#ffffff;display:flex;align-items:center;padding-left:16px;font-size:12px;font-weight:500;color:#8C8C86">Solde réel</div>
+              <sc-for list="{{ tSoldes.head }}" as="hd" hint-placeholder-count="12"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:12px;font-weight:500;color:#8C8C86">{{ hd.t }}</div></sc-for>
+            </div>
+            <sc-for list="{{ tSoldes.rows }}" as="row" hint-placeholder-count="3">
+              <div style="display:flex;min-width:max-content;min-height:44px;align-items:center;border-top:1px solid #E7E3DC">
+                <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;align-self:stretch;background:#ffffff;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;font-size:13px;color:#232323;font-weight:{{ row.w }}">
+                  <span style="flex:0 0 auto;width:8px;height:8px;border-radius:3px;background:{{ row.dot }}"></span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.label }}</span>
+                </div>
+                <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="12"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:{{ cell.w }};color:{{ cell.c }}">{{ cell.t }}</div></sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+
+      <div style="padding:24px 16px 0">
+        <div style="font-size:16px;font-weight:600;color:#232323;margin-bottom:12px">Dépenses par catégorie</div>
+        <div style="background:#ffffff;border-radius:16px;padding:20px 20px 12px">
+          <div style="font-size:13px;color:#8C8C86">Total {{ year }}</div>
+          <div style="font-size:28px;font-weight:600;color:#8A5A46;font-variant-numeric:tabular-nums;letter-spacing:-0.2px;line-height:1.2;margin-top:2px">{{ depTotal }}</div>
+          <div style="font-size:13px;color:#6B6B66;margin-top:4px">{{ periodNote }}</div>
+          <div style="display:flex;gap:2px;height:14px;border-radius:999px;overflow:hidden;margin:16px 0 8px">
+            <sc-for list="{{ stackSegs }}" as="sg" hint-placeholder-count="8">
+              <div style="height:14px;width:{{ sg.w }};background:{{ sg.color }}"></div>
+            </sc-for>
+          </div>
+          <sc-for list="{{ catRows }}" as="row" hint-placeholder-count="8">
+            <div>
+              <button onClick="{{ row.onTap }}" style="width:calc(100% + 20px);margin:0 -10px;min-height:48px;display:flex;align-items:center;gap:10px;padding:0 10px;border:0;border-radius:12px;cursor:pointer;text-align:left;font-family:Inter,system-ui,sans-serif;background:{{ row.bg }}">
+                <span style="flex:0 0 auto;width:10px;height:10px;border-radius:3px;background:{{ row.color }}"></span>
+                <span style="flex:1;min-width:0;font-size:14px;font-weight:500;color:#232323">{{ row.name }}</span>
+                <span style="font-size:13px;color:#8C8C86;font-variant-numeric:tabular-nums">{{ row.pct }}</span>
+                <span style="min-width:92px;text-align:right;font-size:14px;font-weight:600;color:#232323;font-variant-numeric:tabular-nums">{{ row.amount }}</span>
+                <span style="width:12px;font-size:12px;color:#8C8C86;text-align:center">{{ row.chev }}</span>
+              </button>
+              <sc-if value="{{ row.showBars }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:8px 0 12px">
+                  <div style="display:flex;align-items:flex-end;gap:4px;height:56px;border-bottom:1px solid #E7E3DC">
+                    <sc-for list="{{ row.bars }}" as="b" hint-placeholder-count="12">
+                      <div style="flex:1;border-radius:3px 3px 0 0;height:{{ b.h }};background:{{ b.color }};opacity:{{ b.op }}"></div>
+                    </sc-for>
+                  </div>
+                  <div style="display:flex;gap:4px;margin-top:4px">
+                    <sc-for list="{{ monthLetters }}" as="m" hint-placeholder-count="12"><div style="flex:1;text-align:center;font-size:12px;color:#8C8C86">{{ m.t }}</div></sc-for>
+                  </div>
+                  <div style="font-size:13px;color:#6B6B66;margin-top:8px;line-height:1.4">{{ row.avgNote }}</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ row.showSubs }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:4px 0 8px">
+                  <sc-for list="{{ row.subs }}" as="sb" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:center;gap:10px;min-height:36px;padding-left:20px">
+                      <span style="flex:1;font-size:13px;color:#6B6B66">{{ sb.name }}</span>
+                      <span style="font-size:13px;color:#8C8C86;font-variant-numeric:tabular-nums">{{ sb.pct }}</span>
+                      <span style="min-width:92px;text-align:right;font-size:13px;color:#6B6B66;font-variant-numeric:tabular-nums;margin-right:22px">{{ sb.amount }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+
+        <sc-if value="{{ showTables }}" hint-placeholder-val="{{ true }}">
+        <div style="background:#ffffff;border-radius:16px;overflow:hidden;margin-top:12px">
+          <div style="overflow-x:auto">
+            <div style="display:flex;min-width:max-content;height:40px;align-items:center">
+              <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;height:40px;background:#ffffff;display:flex;align-items:center;padding-left:16px;font-size:12px;font-weight:500;color:#8C8C86">Catégorie</div>
+              <sc-for list="{{ tDep.head }}" as="hd" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:12px;font-weight:500;color:#8C8C86">{{ hd.t }}</div></sc-for>
+            </div>
+            <sc-for list="{{ tDep.rows }}" as="row" hint-placeholder-count="8">
+              <div style="display:flex;min-width:max-content;min-height:44px;align-items:center;border-top:1px solid #E7E3DC">
+                <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;align-self:stretch;background:#ffffff;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;font-size:13px;color:#232323;font-weight:{{ row.w }}">
+                  <span style="flex:0 0 auto;width:8px;height:8px;border-radius:3px;background:{{ row.dot }}"></span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.label }}</span>
+                </div>
+                <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:{{ cell.w }};color:{{ cell.c }}">{{ cell.t }}</div></sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+
+      <div style="padding:24px 16px 0">
+        <div style="font-size:16px;font-weight:600;color:#232323;margin-bottom:12px">Budgets · prévu et réalisé</div>
+        <div style="background:#ffffff;border-radius:16px;padding:8px 20px 8px">
+          <div style="display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -20px;padding:0 16px">
+            <sc-for list="{{ bChips }}" as="c" hint-placeholder-count="5">
+              <button onClick="{{ c.onTap }}" style="flex:0 0 auto;height:48px;border:0;background:transparent;padding:0;cursor:pointer;font-family:Inter,system-ui,sans-serif">
+                <span style="display:block;border-radius:999px;padding:8px 14px;font-size:13px;color:{{ c.fg }};background:{{ c.bg }}">{{ c.label }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <div style="font-size:16px;font-weight:600;color:#232323;margin-top:8px">{{ bSummary }}</div>
+          <div style="font-size:13px;color:#6B6B66;margin-top:4px;line-height:1.4">{{ bSub }}</div>
+
+          <div style="position:relative;height:168px;margin-top:16px">
+            <div style="position:absolute;left:0;right:0;top:0;bottom:24px;display:flex;border-bottom:1px solid #E7E3DC">
+              <sc-for list="{{ bCols }}" as="c" hint-placeholder-count="12">
+                <button onClick="{{ c.onTap }}" aria-label="{{ c.aria }}" style="flex:1;position:relative;height:100%;border:0;padding:0;cursor:pointer;border-radius:8px 8px 0 0;background:{{ c.bg }}">
+                  <span style="position:absolute;left:50%;bottom:0;width:14px;margin-left:-7px;border-radius:4px 4px 0 0;height:{{ c.barH }};background:{{ c.color }}"></span>
+                  <span style="position:absolute;left:50%;width:22px;margin-left:-11px;height:2px;border-radius:1px;background:#6B6B66;bottom:{{ c.capB }}"></span>
+                </button>
+              </sc-for>
+            </div>
+            <div style="position:absolute;left:0;right:0;bottom:0;height:20px;display:flex">
+              <sc-for list="{{ bMonths }}" as="ml" hint-placeholder-count="12">
+                <div style="flex:1;text-align:center;font-size:12px;font-weight:{{ ml.w }};color:{{ ml.c }}">{{ ml.t }}</div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px;font-size:13px;color:#6B6B66">
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:3px;background:#4C7A6C"></span>Dans le prévu</span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:10px;height:10px;border-radius:3px;background:#C79A56"></span>Un peu au-dessus</span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:14px;height:2px;border-radius:1px;background:#6B6B66"></span>{{ capLegend }}</span>
+          </div>
+
+          <div style="border-top:1px solid #E7E3DC;margin-top:12px">
+            <div style="display:flex;align-items:center">
+              <button onClick="{{ bPrev }}" aria-label="Mois précédent" style="width:48px;height:48px;border:0;background:transparent;font-size:18px;cursor:pointer;color:{{ bPrevColor }}">‹</button>
+              <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px">
+                <span style="font-size:14px;font-weight:600;color:#232323">{{ bTitle }}</span>
+                <span style="font-size:12px;font-weight:500;border-radius:999px;padding:3px 10px;color:{{ bPillFg }};background:{{ bPillBg }}">{{ bPill }}</span>
+              </div>
+              <button onClick="{{ bNext }}" aria-label="Mois suivant" style="width:48px;height:48px;border:0;background:transparent;font-size:18px;cursor:pointer;color:{{ bNextColor }}">›</button>
+            </div>
+            <div style="padding:0 0 12px;text-align:center">
+              <div style="font-size:14px;font-weight:600;color:#232323;font-variant-numeric:tabular-nums">{{ bLine1 }}</div>
+              <sc-if value="{{ bLine2 }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:13px;color:#8C8C86;margin-top:2px">{{ bLine2 }}</div>
+              </sc-if>
+              <div style="font-size:13px;color:#6B6B66;margin-top:6px">{{ bMsg }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <sc-if value="{{ showTables }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:24px 16px 0">
+        <div style="font-size:16px;font-weight:600;color:#232323;margin-bottom:12px">Recettes par catégorie</div>
+        <div style="background:#ffffff;border-radius:16px;overflow:hidden">
+          <div style="overflow-x:auto">
+            <div style="display:flex;min-width:max-content;height:40px;align-items:center">
+              <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;height:40px;background:#ffffff;display:flex;align-items:center;padding-left:16px;font-size:12px;font-weight:500;color:#8C8C86">Catégorie</div>
+              <sc-for list="{{ tRec.head }}" as="hd" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:12px;font-weight:500;color:#8C8C86">{{ hd.t }}</div></sc-for>
+            </div>
+            <sc-for list="{{ tRec.rows }}" as="row" hint-placeholder-count="4">
+              <div style="display:flex;min-width:max-content;min-height:44px;align-items:center;border-top:1px solid #E7E3DC">
+                <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;align-self:stretch;background:#ffffff;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;font-size:13px;color:#232323;font-weight:{{ row.w }}">
+                  <span style="flex:0 0 auto;width:8px;height:8px;border-radius:3px;background:{{ row.dot }}"></span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.label }}</span>
+                </div>
+                <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:{{ cell.w }};color:{{ cell.c }}">{{ cell.t }}</div></sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div style="padding:24px 16px 0">
+        <div style="font-size:16px;font-weight:600;color:#232323;margin-bottom:12px">Opérations par compte</div>
+        <div style="background:#ffffff;border-radius:16px;overflow:hidden">
+          <div style="overflow-x:auto">
+            <div style="display:flex;min-width:max-content;height:40px;align-items:center">
+              <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;height:40px;background:#ffffff;display:flex;align-items:center;padding-left:16px;font-size:12px;font-weight:500;color:#8C8C86">Variation nette</div>
+              <sc-for list="{{ tOps.head }}" as="hd" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:12px;font-weight:500;color:#8C8C86">{{ hd.t }}</div></sc-for>
+            </div>
+            <sc-for list="{{ tOps.rows }}" as="row" hint-placeholder-count="3">
+              <div style="display:flex;min-width:max-content;min-height:44px;align-items:center;border-top:1px solid #E7E3DC">
+                <div style="position:sticky;left:0;z-index:1;flex:0 0 124px;align-self:stretch;background:#ffffff;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px;font-size:13px;color:#232323;font-weight:{{ row.w }}">
+                  <span style="flex:0 0 auto;width:8px;height:8px;border-radius:3px;background:{{ row.dot }}"></span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ row.label }}</span>
+                </div>
+                <sc-for list="{{ row.cells }}" as="cell" hint-placeholder-count="13"><div style="flex:0 0 92px;padding-right:12px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;font-weight:{{ cell.w }};color:{{ cell.c }}">{{ cell.t }}</div></sc-for>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+    </div>
+    </sc-if>
+    <div style="height:32px"></div>
+  </div>
+  </x-import>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;topN&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:7,&quot;min&quot;:4,&quot;max&quot;:10,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Répartition&quot;},&quot;showTables&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Composition&quot;}}">
+const ML = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
+const MS = ['J','F','M','A','M','J','J','A','S','O','N','D'];
+const MT = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.'];
+const CAT_PAL = ['#6F9486','#C2A06A','#9A8DB4','#C29478','#8499B3','#7BA8A1','#C0939A','#99A57A','#C6B26F'];
+const AUTRES = '#ADA69A', SANS = '#CFCAC0';
+const ACC_PAL = ['#4C7A6C','#8499B3','#9A8DB4','#C2A06A'];
+const CUR_YEAR = 2026, CUR_M = 8, MIN_YEAR = 2024;
+const CATS_STD = [['Logement',780,0],['Alimentation',420,.15],['Voiture',150,.5],['Restaurant',118,.45],['Loisir',90,.8],['Services',62,.1],['Santé',40,1],['Habillement',45,1.2],['Assurances',42.9,0],['Cadeaux',30,1.5]];
+const CATS_MORE = [['Voyages',70,1.8],['Enfants',55,.6],['Impôts',60,0],['Maison',38,1],['Sport',35,.4],['Animaux',28,.5],['Téléphone',19.99,0],['Livres',14,1]];
+const BUDGETS = [['Alimentation',480,false],['Restaurant',120,true],['Loisir',150,false],['Voiture',140,false],['Habillement',60,true]];
+const r2 = n => Math.round(n * 100) / 100;
+function rng(seed) { let s = seed % 2147483647; if (s <= 0) s += 2147483646; return () => { s = s * 16807 % 2147483647; return (s - 1) / 2147483646; }; }
+const lc = m => ML[m].toLowerCase();
+
+function buildData(scn, year) {
+  if (year < 2025) return null;
+  const last = year === CUR_YEAR ? CUR_M : 11;
+  const r = rng(year * 7 + (scn === 'many' ? 3 : 1));
+  const mk = (base, v, bump) => Array.from({ length: 12 }, (_, m) => m > last ? 0 : r2(Math.max(0, base * (1 + (r() - 0.5) * v * 1.6) + (bump ? bump(m) : 0))));
+  const list = scn === 'many' ? CATS_STD.concat(CATS_MORE) : CATS_STD;
+  const cats = list.map(([name, base, v]) => {
+    const months = mk(base, v, name === 'Restaurant' ? m => (m === 6 || m === 7 ? 42 : 0) : null);
+    return { name, months, total: r2(months.reduce((a, b) => a + b, 0)) };
+  }).filter(c => c.total > 0);
+  const sm = mk(16, 1.2);
+  const sans = { name: 'Sans catégorie', months: sm, total: r2(sm.reduce((a, b) => a + b, 0)) };
+  const rec = [
+    { label: 'Salaire', vals: Array.from({ length: 12 }, (_, m) => m <= last || year === CUR_YEAR ? 2380 : 0) },
+    { label: 'Primes', vals: Array.from({ length: 12 }, (_, m) => m === 5 ? 600 : (m === 11 ? 900 : 0)) },
+    { label: 'Remboursements', vals: Array.from({ length: 12 }, (_, m) => m > last ? 0 : (r() < 0.45 ? r2(20 + r() * 60) : 0)) },
+  ];
+  const off = (year === 2025 && scn !== 'neg') ? -700 : 0;
+  let cc = [1320, 1180, 1405, 1260, 1110, 1540, 1290, 980, 1060, 1180, 1250, 1640];
+  if (scn === 'neg') cc = [640, 420, 510, 300, 180, 390, 120, -240, 85, -60, 210, 690];
+  const accs = [{ key: 'cc', name: 'Compte courant', reel: cc.map(v => v + off) }];
+  if (scn !== 'single') {
+    accs.push({ key: 'livret', name: 'Livret A', reel: Array.from({ length: 12 }, (_, m) => 3400 + off * 2 + 200 * m) });
+    accs.push({ key: 'edenred', name: 'EdenRed', reel: [96, 142, 88, 130, 74, 118, 150, 62, 118, 140, 110, 95] });
+  }
+  accs.forEach(a => {
+    a.pointe = a.reel.map((v, m) => {
+      if (m > last) return null;
+      if (year !== CUR_YEAR) return v;
+      if (m === last) return v + (a.key === 'cc' ? 146.2 : 0);
+      if (m === last - 1) return v + (a.key === 'cc' ? 30 : 0);
+      return v;
+    });
+  });
+  return { cats, sans, rec, accs, last };
+}
+
+class Component extends DCLogic {
+  state = { scn: 'std', year: 2026, mode: 'reel', iso: null, sMonth: null, selCat: null, autresOpen: false, bCat: 'Alimentation', bMonth: null };
+
+  fmt(n, signed) {
+    const abs = Math.abs(n).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return (n < 0 ? '−' : (signed && n > 0 ? '+' : '')) + abs + '\u00a0€';
+  }
+  fmt0(n) { return (n < 0 ? '−' : '') + Math.abs(n).toLocaleString('fr-FR', { maximumFractionDigits: 0 }) + '\u00a0€'; }
+  reset(extra) { this.setState({ iso: null, sMonth: null, selCat: null, autresOpen: false, bMonth: null, ...extra }); }
+
+  table(rows, last, opts = {}) {
+    const head = MT.map(t => ({ t })).concat(opts.noTotal ? [] : [{ t: 'Total' }]);
+    return {
+      head,
+      rows: rows.map(r => ({
+        label: r.label, dot: r.color || 'transparent', w: r.bold ? '600' : '400',
+        cells: r.vals.map((v, m) => {
+          const fut = m > last;
+          if (fut && !opts.showFuture) return { t: '—', c: '#D8D5CE', w: '400' };
+          return { t: (!v && !opts.showZero) ? '—' : this.fmt(v), c: v < 0 ? '#8A5A46' : (fut ? '#8C8C86' : (v ? '#232323' : '#D8D5CE')), w: r.bold ? '600' : '400' };
+        }).concat(opts.noTotal ? [] : [{ t: this.fmt(r.vals.reduce((a, b) => a + b, 0)), c: '#232323', w: '600' }]),
+      })),
+    };
+  }
+
+  renderVals() {
+    const s = this.state;
+    const topN = this.props.topN ?? 7;
+    const showTables = this.props.showTables ?? true;
+    const d = buildData(s.scn, s.year);
+
+    const scDefs = [['std', 'Standard · 3 comptes'], ['single', 'Un seul compte'], ['many', 'Beaucoup de catégories'], ['neg', 'Solde sous zéro'], ['empty', 'Année vide']];
+    const activeScn = s.year < 2025 ? 'empty' : s.scn;
+    const scenarios = scDefs.map(([key, label]) => {
+      const on = key === activeScn;
+      return {
+        label, fg: on ? '#ffffff' : '#232323', bg: on ? '#4C7A6C' : '#ffffff', bd: on ? '#4C7A6C' : '#E7E3DC',
+        onTap: () => this.reset(key === 'empty' ? { year: 2024 } : { scn: key, year: 2026 }),
+      };
+    });
+
+    const base = {
+      scenarios, showTables,
+      year: String(s.year),
+      nextYearLabel: String(s.year + 1),
+      prevYear: () => s.year > MIN_YEAR && this.reset({ year: s.year - 1 }),
+      nextYear: () => s.year < CUR_YEAR && this.reset({ year: s.year + 1 }),
+      prevYearColor: s.year > MIN_YEAR ? '#6B6B66' : '#D8D5CE',
+      nextYearColor: s.year < CUR_YEAR ? '#6B6B66' : '#D8D5CE',
+      yearNote: s.year === CUR_YEAR ? 'Année en cours · réalisé jusqu’à fin septembre' : 'Année complète',
+      isEmpty: !d, hasData: !!d,
+    };
+    if (!d) return base;
+    const last = d.last;
+    const isCur = s.year === CUR_YEAR;
+
+    // Soldes
+    const single = d.accs.length === 1;
+    const accs = d.accs.map((a, i) => ({ ...a, color: ACC_PAL[i] }));
+    const vis = accs.filter(a => !s.iso || a.key === s.iso);
+    const series = single
+      ? [{ vals: accs[0].reel, color: accs[0].color, dashed: false }, { vals: accs[0].pointe, color: accs[0].color, dashed: true }]
+      : vis.map(a => ({ vals: s.mode === 'reel' ? a.reel : a.pointe, color: a.color, dashed: false }));
+    const all = series.flatMap(x => x.vals).filter(v => v != null);
+    let lo = Math.min(0, ...all), hi = Math.max(0, ...all);
+    const steps = [100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000];
+    const st = steps.find(k => Math.ceil(hi / k) - Math.floor(lo / k) <= 4) || 50000;
+    lo = Math.floor(lo / st) * st; hi = Math.ceil(hi / st) * st; if (hi === lo) hi = lo + st;
+    const yp = v => (hi - v) / (hi - lo) * 100;
+    const ticks = [];
+    for (let v = hi; v >= lo; v -= st) ticks.push({ top: yp(v) + '%', label: this.fmt0(v), color: v === 0 && lo < 0 ? '#CFCAC0' : '#E7E3DC' });
+    const W = 1200, H = 1000, px = m => (m + 0.5) / 12 * W, py = v => (hi - v) / (hi - lo) * H;
+    const pathOf = (vals, a, b) => { let p = ''; for (let m = a; m <= b; m++) if (vals[m] != null) p += (p ? 'L' : 'M') + px(m).toFixed(1) + ' ' + py(vals[m]).toFixed(1); return p; };
+    const h = React.createElement;
+    const kids = [];
+    series.forEach((se, i) => {
+      const common = { fill: 'none', stroke: se.color, strokeWidth: 2, vectorEffect: 'non-scaling-stroke', strokeLinejoin: 'round', strokeLinecap: 'round', strokeDasharray: se.dashed ? '3 4' : undefined };
+      kids.push(h('path', { key: 'p' + i, d: pathOf(se.vals, 0, last), ...common }));
+      if (last < 11 && !se.dashed) kids.push(h('path', { key: 'f' + i, d: pathOf(se.vals, last, 11), ...common, strokeOpacity: 0.4 }));
+    });
+    const soldeSvg = h('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', style: { position: 'absolute', inset: 0, width: '100%', height: '100%', overflow: 'visible', pointerEvents: 'none' } }, kids);
+    const sM = s.sMonth ?? last;
+    const selX = ((sM + 0.5) / 12 * 100) + '%';
+    const dots = series.filter(se => se.vals[sM] != null).map(se => ({ color: se.color, left: selX, top: yp(se.vals[sM]) + '%' }));
+    const sMonths = MS.map((t, m) => ({
+      t, w: m === sM ? '600' : '400', c: m === sM ? '#232323' : '#8C8C86', aria: 'Fin ' + lc(m),
+      onTap: () => this.setState({ sMonth: m }),
+    }));
+    const readRows = vis.map(a => {
+      const v = a.reel[sM], p = a.pointe[sM];
+      const showP = single || s.mode === 'reel';
+      return {
+        name: a.name, color: a.color,
+        value: this.fmt(s.mode === 'pointe' && !single ? (p ?? v) : v),
+        vColor: v < 0 ? '#8A5A46' : '#232323',
+        sub: showP ? (p == null ? 'Rien de pointé à cette date' : 'Pointé ' + this.fmt(p)) : 'Réel ' + this.fmt(v),
+      };
+    });
+    let negNote = '';
+    for (const a of vis) {
+      const past = a.reel.map((v, m) => m <= last && v < 0 ? m : -1).filter(m => m >= 0);
+      const fut = a.reel.map((v, m) => m > last && v < 0 ? m : -1).filter(m => m >= 0);
+      if (!past.length && !fut.length) continue;
+      if (past.length) {
+        const m0 = past[0];
+        const back = a.reel.findIndex((v, m) => m > m0 && m <= last && v >= 0);
+        negNote = `Le ${a.name} est passé sous zéro fin ${lc(m0)} (${this.fmt(a.reel[m0])})` + (back >= 0 ? `, puis il est remonté fin ${lc(back)}.` : '.');
+      }
+      if (fut.length) negNote += (negNote ? ' ' : '') + `D’après les prévisions, il repasserait sous zéro fin ${lc(fut[0])} — une récurrence peut être décalée si besoin.`;
+      break;
+    }
+    const accChips = accs.map(a => {
+      const on = s.iso === a.key, dim = s.iso && !on;
+      return {
+        label: a.name, color: a.color, op: dim ? 0.35 : 1,
+        fg: dim ? '#8C8C86' : (on ? '#3A5F54' : '#232323'), bg: on ? '#E3ECE8' : '#F1EEE9',
+        onTap: () => this.setState({ iso: on ? null : a.key }),
+      };
+    });
+    const modeSeg = [['reel', 'Réel'], ['pointe', 'Pointé']].map(([k, label]) => ({
+      label, fg: s.mode === k ? '#232323' : '#6B6B66', bg: s.mode === k ? '#ffffff' : 'transparent',
+      onTap: () => this.setState({ mode: k }),
+    }));
+    const tSoldes = this.table(accs.map(a => ({ label: a.name, color: a.color, vals: a.reel })), last, { noTotal: true, showFuture: true, showZero: true });
+
+    // Dépenses
+    const sorted = [...d.cats].sort((a, b) => b.total - a.total);
+    let groups;
+    if (sorted.length > topN + 1) {
+      const rest = sorted.slice(topN);
+      groups = sorted.slice(0, topN).map((c, i) => ({ ...c, color: CAT_PAL[i] }));
+      groups.push({ name: `Autres (${rest.length})`, color: AUTRES, isAutres: true, subs: rest, total: r2(rest.reduce((a, c) => a + c.total, 0)), months: MS.map((_, m) => r2(rest.reduce((a, c) => a + c.months[m], 0))) });
+    } else groups = sorted.map((c, i) => ({ ...c, color: CAT_PAL[i] }));
+    if (d.sans.total > 0) groups.push({ ...d.sans, color: SANS });
+    const tot = r2(groups.reduce((a, g) => a + g.total, 0));
+    const pctOf = v => { const p = v / tot * 100; return p < 1 ? '<1 %' : Math.round(p) + ' %'; };
+    const selCat = s.selCat ?? groups[0].name;
+    const catRows = groups.map(g => {
+      const sel = !g.isAutres && selCat === g.name;
+      const mx = Math.max(...g.months);
+      const realized = g.months.slice(0, last + 1);
+      const avg = realized.reduce((a, b) => a + b, 0) / realized.length;
+      const maxM = g.months.indexOf(mx);
+      return {
+        name: g.name, color: g.color, pct: pctOf(g.total), amount: this.fmt(g.total),
+        bg: sel || (g.isAutres && s.autresOpen) ? '#F1EEE9' : 'transparent',
+        chev: g.isAutres ? (s.autresOpen ? '▴' : '▾') : '',
+        showBars: sel, showSubs: !!g.isAutres && s.autresOpen,
+        bars: g.months.map((v, m) => ({ h: mx > 0 ? Math.max(v > 0 ? 3 : 0, v / mx * 100) + '%' : '0%', color: g.color, op: m === maxM ? 1 : 0.7 })),
+        avgNote: `Moyenne ${this.fmt(avg)} par mois · le plus haut en ${lc(maxM)} (${this.fmt(mx)}).`,
+        subs: (g.subs || []).map(c => ({ name: c.name, pct: pctOf(c.total), amount: this.fmt(c.total) })),
+        onTap: () => g.isAutres ? this.setState(p => ({ autresOpen: !p.autresOpen })) : this.setState({ selCat: sel ? '__none' : g.name }),
+      };
+    });
+    const stackSegs = groups.map(g => ({ w: (g.total / tot * 100) + '%', color: g.color }));
+    const tDep = this.table(groups.map(g => ({ label: g.name, color: g.color, vals: g.months })).concat([{ label: 'Total', bold: true, vals: MS.map((_, m) => r2(groups.reduce((a, g) => a + g.months[m], 0))) }]), last);
+
+    // Budgets
+    const bDefs = BUDGETS.filter(([n]) => d.cats.some(c => c.name === n));
+    const [bName, bBase, roll] = bDefs.find(b => b[0] === s.bCat) || bDefs[0];
+    const spent = d.cats.find(c => c.name === bName).months;
+    const caps = []; let carry = 0;
+    for (let m = 0; m < 12; m++) {
+      const cap = r2(bBase + (roll ? carry : 0)); caps.push(cap);
+      carry = m <= last && roll ? Math.max(0, cap - spent[m]) : 0;
+    }
+    const bMax = Math.max(...spent, ...caps) * 1.12;
+    const bM = s.bMonth ?? last;
+    const bCols = MS.map((_, m) => ({
+      barH: m <= last ? (spent[m] / bMax * 100) + '%' : '0%',
+      capB: (caps[m] / bMax * 100) + '%',
+      color: spent[m] > caps[m] ? '#C79A56' : '#4C7A6C',
+      bg: m === bM ? '#F1EEE9' : 'transparent', aria: ML[m],
+      onTap: () => this.setState({ bMonth: m }),
+    }));
+    const bMonths = MS.map((t, m) => ({ t, w: m === bM ? '600' : '400', c: m === bM ? '#232323' : '#8C8C86' }));
+    const overMs = spent.map((v, m) => m <= last && v > caps[m] ? m : -1).filter(m => m >= 0);
+    const n = last + 1;
+    const leftTot = spent.slice(0, n).reduce((a, v, m) => a + Math.max(0, caps[m] - v), 0);
+    const bChips = bDefs.map(([name]) => {
+      const on = name === bName;
+      return { label: name, fg: on ? '#ffffff' : '#232323', bg: on ? '#4C7A6C' : '#F1EEE9', onTap: () => this.setState({ bCat: name, bMonth: null }) };
+    });
+    const bFut = bM > last, bOver = !bFut && spent[bM] > caps[bM];
+    const nextName = bM < 11 ? lc(bM + 1) : 'janvier';
+
+    return {
+      ...base,
+      multiAcc: !single, singleAcc: single,
+      modeSeg, accChips,
+      chipHint: s.iso ? 'Touche à nouveau pour revoir tous les comptes.' : 'Touche un compte pour l’isoler.',
+      showPrevLegend: isCur,
+      ticks, soldeSvg, selX, dots, sMonths,
+      negBandShow: lo < 0, negBandH: ((0 - lo) / (hi - lo) * 100) + '%',
+      sTitle: 'Fin ' + lc(sM), sIsFuture: isCur && sM > last,
+      sPrev: () => sM > 0 && this.setState({ sMonth: sM - 1 }),
+      sNext: () => sM < 11 && this.setState({ sMonth: sM + 1 }),
+      sPrevColor: sM > 0 ? '#6B6B66' : '#D8D5CE', sNextColor: sM < 11 ? '#6B6B66' : '#D8D5CE',
+      readRows, negNote, tSoldes,
+
+      depTotal: this.fmt(tot),
+      periodNote: isCur ? 'De janvier à septembre · les prévisions ne sont pas comptées.' : 'De janvier à décembre.',
+      stackSegs, catRows, tDep,
+      monthLetters: MS.map(t => ({ t })),
+
+      bChips, bCols, bMonths,
+      bSummary: overMs.length === 0 ? 'Dans le prévu tous les mois' : `Dans le prévu ${n - overMs.length} mois sur ${n}`,
+      bSub: overMs.length === 0
+        ? `${this.fmt(leftTot)} non dépensés sur l’année${roll ? ', reportés au fil des mois.' : '.'}`
+        : `${overMs.length === 1 ? 'Un mois' : overMs.length + ' mois'} un peu au-dessus : ${overMs.map(lc).join(', ')}.`,
+      capLegend: roll ? 'Prévu, reliquat inclus' : 'Prévu',
+      bTitle: ML[bM],
+      bPill: bFut ? 'À venir' : (bOver ? 'Un peu au-dessus' : 'Dans le prévu'),
+      bPillFg: bFut ? '#9A958C' : (bOver ? '#C79A56' : '#4C7A6C'),
+      bPillBg: bFut ? '#EDEBE7' : (bOver ? '#F5ECDB' : '#E3ECE8'),
+      bLine1: bFut ? `${this.fmt(caps[bM])} prévus` : `${this.fmt(spent[bM])} dépensés sur ${this.fmt(caps[bM])} prévus`,
+      bLine2: roll && caps[bM] > bBase && bM > 0 ? `dont ${this.fmt(caps[bM] - bBase)} de reliquat de ${lc(bM - 1)}` : '',
+      bMsg: bFut ? 'Mois pas encore commencé.' : (bOver ? `Un peu plus que prévu ce mois-ci (${this.fmt(spent[bM] - caps[bM], true)}).` : `Il est resté ${this.fmt(caps[bM] - spent[bM])}${roll ? `, reportés sur ${nextName}.` : '.'}`),
+      bPrev: () => bM > 0 && this.setState({ bMonth: bM - 1 }),
+      bNext: () => bM < 11 && this.setState({ bMonth: bM + 1 }),
+      bPrevColor: bM > 0 ? '#6B6B66' : '#D8D5CE', bNextColor: bM < 11 ? '#6B6B66' : '#D8D5CE',
+
+      tRec: this.table(d.rec.map((r, i) => ({ label: r.label, color: ['#6F9486', '#7BA8A1', '#99A57A'][i], vals: r.vals })).concat([{ label: 'Total', bold: true, vals: MS.map((_, m) => d.rec.reduce((a, r) => a + r.vals[m], 0)) }]), last),
+      tOps: this.table(accs.map(a => ({ label: a.name, color: a.color, vals: a.reel.map((v, m) => r2(v - (m ? a.reel[m - 1] : v - 120))) })), last),
+    };
+  }
+}
+</script>
+</body>
+</html>

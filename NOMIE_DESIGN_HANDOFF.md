@@ -270,6 +270,185 @@ en body-sm `mute` sous le conteneur.
   **split illimité en montant ou %** avec contrôle du total en direct) reste à maquetter — utiliser
   les mêmes tokens, `split-row` = fond `surface-soft` radius 12 padding `10px 12px`.
 
+### 6.7 Bilan annuel — visualisations
+
+Prototype : `prototype/Bilan annuel NoMie.dc.html` (sélecteur d'états au-dessus du téléphone :
+Standard · Un seul compte · Beaucoup de catégories · Solde sous zéro · Année vide ; chips
+Alimentation = budget dans les clous, Restaurant = budget dépassé). Rendu à recoder en React Native
+(react-native-svg ou lib de charts) — **ne pas reprendre le HTML**.
+
+**Composition de l'écran (de haut en bas)** — chaque graphique est placé **au-dessus du tableau
+qu'il résume**, dans sa propre carte `surface` radius 16 ; le tableau suit dans une seconde carte,
+12px dessous.
+
+1. En-tête 56px : « Bilan annuel » heading-md + bouton ghost « Fermer » (48px).
+2. Sélecteur d'année centré : ‹ 2026 › (boutons 48×48, chiffre 22/600 tabulaire), sous-titre
+   body-sm `ash` « Année en cours · réalisé jusqu'à fin septembre » / « Année complète ».
+   Flèche désactivée = `faint` #D8D5CE. Bornes : première année avec des données → année en cours.
+3. **Soldes en fin de mois** — graphique 2 + tableau. En premier : c'est la réponse à
+   « où j'en suis sur l'année ».
+4. **Dépenses par catégorie** — graphique 1 + tableau.
+5. **Budgets · prévu et réalisé** — graphique 3 (sans tableau).
+6. **Recettes par catégorie** — tableau seul (2 à 4 lignes : un graphique n'apporte rien).
+7. **Opérations par compte** — tableau seul (variation nette mensuelle).
+
+Titres de section : heading-sm (16/600 `ink`), margin-bottom 12, écart entre sections 24px.
+
+**Où placer « prévu vs réalisé »** : sa place principale est l'**écran Budgets** — chaque carte
+budget (§6.3) gagne un lien ghost « Voir l'année » qui ouvre un détail plein écran de la catégorie
+contenant exactement le graphique 3 (sans les chips, la catégorie est déjà choisie). C'est là que la
+question « est-ce que je tiens ce budget ? » se pose. Dans le Bilan annuel il sert de vue
+comparative, catégorie par catégorie via les chips. Ne pas l'ajouter dans les cartes de la liste
+Budgets elle-même : les barres de progression suffisent et la liste resterait légère.
+
+#### Palette catégorielle (nouveaux tokens)
+
+Même famille que les pastels actuels, remontée à une luminance moyenne équivalente (~L 60–68 %,
+chroma bas) pour qu'aucune teinte ne domine. Attribution **par rang de montant**, pas par catégorie
+fixe (les couleurs restent stables à l'intérieur d'une année affichée).
+
+| Token | Hex | Pastel d'origine |
+|---|---|---|
+| chart-1 sauge | `#6F9486` | #E3ECE8 |
+| chart-2 ocre | `#C2A06A` | #F5ECDB |
+| chart-3 lavande | `#9A8DB4` | #ECE7F2 |
+| chart-4 argile | `#C29478` | #F1DCCB |
+| chart-5 bleu ardoise | `#8499B3` | #DCE7F3 |
+| chart-6 eau | `#7BA8A1` | #DCEFEC |
+| chart-7 rose poudré | `#C0939A` | #F3E1E3 |
+| chart-8 olive | `#99A57A` | #E7ECD8 |
+| chart-9 blé (réserve si N = 9) | `#C6B26F` | #F6EFD1 |
+| chart-autres taupe | `#ADA69A` | #EBE7E0 |
+| chart-sans-categorie | `#CFCAC0` (= hairline-strong) | — |
+
+Comptes (graphique 2) : compte 1 `#4C7A6C` (primary), 2 `#8499B3`, 3 `#9A8DB4`, 4 `#C2A06A`,
+dans l'ordre des comptes de l'utilisateur.
+
+#### Graphique 1 — Répartition des dépenses par catégorie
+
+- **Type** : barre empilée horizontale 100 % + liste classée (pas de camembert : illisible au-delà
+  de 6 parts et difficile à comparer). Chaque ligne se déplie en mini-histogramme mensuel.
+- **Dimensions** : carte padding `20px 20px 12px`. Barre empilée pleine largeur, hauteur 14px,
+  radius 999, `overflow:hidden`, `gap:2px` blanc entre segments, margin `16px 0 8px`. Lignes :
+  hauteur min 48px, padding horizontal 10px débordant de 10px dans le padding de carte, radius 12.
+  Mini-histogramme : 12 barres `gap:4px`, hauteur zone 56px, radius `3px 3px 0 0`, ligne de base
+  1px `hairline`, lettres des mois J F M… en caption 12px `ash` dessous.
+- **En-tête de carte** : « Total 2026 » body-sm `ash` ; montant 28/600 `amount-negative` #8A5A46
+  tabulaire ; période body-sm `mute`.
+- **Ligne** : pastille 10×10 radius 3 (couleur du segment) · nom body-md-medium `ink` · % body-sm
+  `ash` (« <1 % » sous 1 %) · montant amount-sm 14/600 `ink`, min-width 92 aligné à droite ·
+  chevron ▾/▴ uniquement sur « Autres ». Ligne sélectionnée : fond `surface-soft` #F1EEE9.
+- **Regroupement** : si plus de **N + 1** catégories ont des dépenses (N = 7 par défaut, réglable
+  4–10), on garde les N premières et on regroupe le reste en « Autres (11) » en taupe. « Sans
+  catégorie » est **toujours une ligne séparée, en dernier**, en #CFCAC0, même si elle est petite.
+- **Micro-copies** : période « De janvier à septembre · les prévisions ne sont pas comptées. » /
+  « De janvier à décembre. » ; détail « Moyenne 118,40 € par mois · le plus haut en août
+  (201,30 €). » (moyenne sur les mois écoulés uniquement).
+- **Tap** : sur une ligne → déplie son histogramme mensuel (une seule ouverte à la fois ; 2ᵉ tap
+  referme). À l'ouverture de l'écran, la 1ʳᵉ catégorie est dépliée. Sur « Autres » → déplie la liste
+  des catégories regroupées (nom 13 `mute`, % `ash`, montant 13 `mute`, lignes 36px, retrait 20px).
+  La barre empilée est statique. Barre du mois le plus haut à opacité 1, autres à 0,7.
+- **État vide** (aucune dépense sur l'année, mais d'autres données existent) : carte avec
+  « Aucune dépense cette année. » body-md `mute` centré, padding 32/20 ; pas de barre ni de liste.
+
+#### Graphique 2 — Évolution du solde
+
+- **Type** : courbes (une par compte), 12 points = fin de chaque mois. Pas d'aire remplie.
+- **Dimensions** : zone totale 200px ; zone de tracé `top:20px; bottom:28px` ; lettres des mois
+  sur 20px en bas, 12 colonnes égales. Traits 2px, jonctions arrondies, pas de points hors sélection.
+- **Axe Y** : 3 à 5 graduations « rondes » (pas choisi parmi 100 / 200 / 250 / 500 / 1 000 /
+  2 000 / 2 500 / 5 000 / 10 000 €), toujours incluant 0. Lignes 1px `hairline` #E7E3DC ; libellés
+  au-dessus de la ligne, à gauche, caption 12px `ash` tabulaire sans décimales (« 4 000 € »), fond
+  blanc 85 % pour rester lisibles quand une courbe passe dessous.
+- **Solde négatif** : la ligne 0 € passe en `hairline-strong` #CFCAC0 et la zone sous zéro reçoit un
+  fond très léger #F6F3EE. La courbe **garde sa couleur** (pas de rouge) ; la lecture se fait par la
+  ligne 0 et par la phrase sous le graphique.
+- **Réel / Pointé** :
+  - Plusieurs comptes : contrôle segmenté pleine largeur « Réel | Pointé », hauteur 48, fond
+    `surface-soft`, segment actif `surface`. Une courbe par compte dans le mode choisi.
+  - Un seul compte : pas de contrôle ; les deux courbes dans la couleur du compte — Réel en trait
+    plein, Pointé en tirets `3 4`. Légende « — Réel  - - Pointé » body-sm `mute`.
+- **Mois futurs (année en cours)** : le Réel continue jusqu'en décembre (il inclut les Prévisions)
+  en même couleur à **40 % d'opacité** ; le Pointé s'arrête au mois courant. Légende : « Trait plus
+  clair : prévisions d'octobre à décembre » (body-sm `ash`).
+- **Légende comptes** (multi) : chips 48px de haut (pill intérieure radius 999 padding `7px 12px`,
+  `surface-soft`, trait de couleur 12×3) ; hint body-sm `ash` « Touche un compte pour l'isoler. »
+- **Tap** :
+  - Sur une colonne du graphique ou via le stepper ‹ › (48×48) sous le graphique → sélectionne le
+    mois. Le mois sélectionné est marqué par un trait vertical 1px #CFCAC0, des points 10px (fond
+    blanc, bordure 2px couleur du compte) sur chaque courbe, et sa lettre en 600 `ink`.
+    Par défaut : mois courant (ou décembre pour une année passée). Le stepper existe parce que les
+    colonnes font ~28px de large : c'est lui qui garantit la cible de 48px.
+  - Sur une chip de compte → isole ce compte (chip en `primary-soft`/`primary-deep`, autres chips
+    atténuées) ; 2ᵉ tap → tous les comptes.
+- **Lecture du mois** (sous le stepper, lignes 48px séparées par `hairline`) : pastille · nom du
+  compte · à droite montant amount-sm (en `amount-negative` s'il est négatif) + sous-ligne body-sm
+  `ash` « Pointé 1 206,20 € » ou « Rien de pointé à cette date ». Titre « Fin septembre » + pill
+  `Prévision` si le mois est futur.
+- **Micro-copies solde négatif** : « Le Compte courant est passé sous zéro fin août (−240,00 €),
+  puis il est remonté fin septembre. » ; si une prévision passe sous zéro : « D'après les
+  prévisions, il repasserait sous zéro fin octobre — une récurrence peut être décalée si besoin. »
+  Jamais « découvert », « alerte », « attention ».
+- **État vide** : « Aucun solde enregistré en 2024. » (même carte que ci-dessus).
+
+#### Graphique 3 — Budget prévu vs réalisé
+
+- **Type** : histogramme mensuel (12 colonnes) + repère horizontal du plafond par mois.
+- **Dimensions** : zone 168px dont 24px pour les lettres de mois ; ligne de base 1px `hairline`.
+  Barre : largeur 14px, centrée, radius `4px 4px 0 0`. Repère plafond : 22×2px, radius 1,
+  `mute` #6B6B66, centré. Échelle : max(dépenses, plafonds) × 1,12. Mois sélectionné : fond de
+  colonne `surface-soft`, radius `8px 8px 0 0`, lettre en 600 `ink`.
+- **Couleurs** : barre `budget-ok` #4C7A6C si dépensé ≤ prévu du mois, `budget-watch` #C79A56
+  sinon. **Aucune troisième couleur**, même pour un gros dépassement. Mois futurs : repère seul.
+- **Report du reliquat** : si activé pour la catégorie, le plafond du mois = montant prévu + reste
+  positif du mois précédent (cumulable) ; le repère monte donc visiblement. Sinon plafond constant.
+- **Contrôles** : chips de catégorie budgétée en scroll horizontal (cibles 48px, pill `surface-soft`
+  / active `primary` texte blanc), en haut de la carte (Bilan uniquement).
+- **Légende** : ■ Dans le prévu · ■ Un peu au-dessus · — « Prévu » ou « Prévu, reliquat inclus ».
+- **Résumé** (heading-sm + body-sm `mute`) :
+  - dans les clous : « Dans le prévu tous les mois » / « 412,30 € non dépensés sur l'année. »
+    (+ « , reportés au fil des mois. » si report) ;
+  - dépassement : « Dans le prévu 6 mois sur 9 » / « 3 mois un peu au-dessus : juillet, août,
+    septembre. »
+- **Tap** : colonne ou stepper ‹ › → sélection du mois ; lecture sous le graphique : titre du mois
+  + pill d'état (`Dans le prévu` sauge/sauge-soft, `Un peu au-dessus` #C79A56/#F5ECDB,
+  `À venir` flux/flux-soft) ; « 138,00 € dépensés sur 120,00 € prévus » (14/600) ; « dont 20,00 € de
+  reliquat de juillet » (body-sm `ash`, si report) ; message body-sm `mute` :
+  - au-dessus : « Un peu plus que prévu ce mois-ci (+18,00 €). »
+  - en dessous : « Il est resté 42,00 €. » / « Il est resté 42,00 €, reportés sur octobre. »
+  - futur : « 120,00 € prévus » / « Mois pas encore commencé. »
+- **États vides** : aucune catégorie budgétée → « Aucun budget suivi cette année. » + lien ghost
+  « Créer un budget » (→ Budgets) ; budget sans dépense → barres absentes, repères visibles,
+  résumé « Rien de dépensé ici cette année. »
+
+#### Tableaux mois par mois (inchangés, précisions)
+
+Carte `surface` radius 16, scroll horizontal. 1ʳᵉ colonne collante 124px (pastille 8×8 radius 3
+de la couleur du graphique + libellé 13px ellipsé), colonnes 92px alignées à droite 13px tabulaire,
+en-tête caption 12/500 `ash` (« janv. », « févr. »…, « Total »), lignes 44px séparées par
+`hairline`, ligne Total en 600. Valeur nulle ou mois futur non compté : « — » en `faint`. Soldes
+futurs affichés en `ash` (prévisions). Montants négatifs en `amount-negative`. Le tableau Dépenses
+reprend exactement le regroupement du graphique (mêmes lignes « Autres » et « Sans catégorie »).
+
+#### État « année sans données »
+
+Si l'année ne contient aucune opération : une seule carte à la place des sections — « Aucune
+opération en 2024. » (heading-sm) / « Les graphiques et les tableaux apparaîtront dès la première
+opération saisie sur cette année. » (body-md `mute`) / lien ghost « Voir 2025 ». Si seules certaines
+sections sont vides, chaque carte affiche son propre message (voir chaque graphique).
+
+#### Interactions — récapitulatif
+
+| Graphique | Statique | Réagit au tap |
+|---|---|---|
+| Barre empilée | oui | — |
+| Liste des catégories | — | déplie l'histogramme mensuel / « Autres » |
+| Courbes de solde | — | mois (colonne ou stepper), isolement d'un compte (chip), Réel/Pointé |
+| Prévu vs réalisé | — | catégorie (chip), mois (colonne ou stepper) |
+
+Pas d'animation de tracé, pas de zoom, pas de geste à plusieurs doigts, pas d'info-bulle flottante
+(la lecture se fait dans une zone fixe sous le graphique). Transitions éventuelles : fondu ≤ 150 ms.
+
 ## 7. Interactions & état
 
 | Déclencheur | Effet |
@@ -320,11 +499,11 @@ calculés en base plutôt qu'en mémoire, un seul registre de transactions (pas 
 |---|---|
 | `README.md` | ce document |
 | `prototype/Accueil NoMie.dc.html` | prototype des 5 écrans + bottom sheet (à ouvrir dans un navigateur) |
+| `prototype/Bilan annuel NoMie.dc.html` | prototype du Bilan annuel et de ses 3 graphiques (§6.7) |
 | `prototype/android-frame.jsx` | cadre d'appareil Android utilisé par le prototype (hors design) |
 | `DESIGN.md` | design system NoMie complet (tokens + composants + do/don't) |
 | `CONTEXT.md` | cahier des charges fonctionnel, modèle de données, règles de gestion |
 | `assets/Logo.jpg` | logo |
 
 Écrans encore à maquetter avant développement complet : saisie détaillée + éditeur de split,
-tableau de bord annuel, visualisations (répartition par catégorie, évolution du solde, prévu vs
-réalisé), gestion des catégories, vue des avances en attente, verrouillage PIN/biométrie.
+détail budget « Voir l'année » (§6.7), gestion des catégories, vue des avances en attente, verrouillage PIN/biométrie.
