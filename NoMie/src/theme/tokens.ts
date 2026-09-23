@@ -31,7 +31,47 @@ export const colors = {
   budgetOk: '#4C7A6C',
   budgetWatch: '#C79A56',
   link: '#3A5F54',
+  chart1: '#6F9486',
+  chart2: '#C2A06A',
+  chart3: '#9A8DB4',
+  chart4: '#C29478',
+  chart5: '#8499B3',
+  chart6: '#7BA8A1',
+  chart7: '#C0939A',
+  chart8: '#99A57A',
+  chart9: '#C6B26F',
+  chartAutres: '#ADA69A',
+  chartSansCategorie: '#CFCAC0',
+  chartSousZero: '#F6F3EE',
+  chartCompte1: '#4C7A6C',
+  chartCompte2: '#8499B3',
+  chartCompte3: '#9A8DB4',
+  chartCompte4: '#C2A06A',
 } as const;
+
+/** Bilan annuel palette (handoff §6.7): handed out by rank of amount, not fixed per category. */
+export const CHART_CATEGORY_COLORS: readonly string[] = [
+  colors.chart1,
+  colors.chart2,
+  colors.chart3,
+  colors.chart4,
+  colors.chart5,
+  colors.chart6,
+  colors.chart7,
+  colors.chart8,
+  colors.chart9,
+];
+
+/** One colour per account on the balance chart, in the user's account order (§6.7). */
+export const CHART_ACCOUNT_COLORS: readonly string[] = [
+  colors.chartCompte1,
+  colors.chartCompte2,
+  colors.chartCompte3,
+  colors.chartCompte4,
+];
+
+/** Past the end of a chart palette, colours come round again. */
+export const chartColor = (palette: readonly string[], rank: number) => palette[rank % palette.length];
 
 export const spacing = {
   xxs: 4,

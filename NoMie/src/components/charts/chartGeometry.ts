@@ -3,6 +3,8 @@
  * from the drawing so it can be checked without rendering anything.
  */
 
+import { CHART_CATEGORY_COLORS, chartColor, colors } from '../../theme/tokens';
+
 export interface BreakdownItem {
   label: string;
   amount: number;
@@ -34,6 +36,91 @@ export function toBreakdown(items: BreakdownItem[], maxSlices = 5): BreakdownSli
         ]
       : sorted;
   return shown.map(({ label, amount }) => ({ label, amount, share: amount / total }));
+}
+
+/** One category's spending over the year; `name` is `null` for operations without a category. */
+export interface CategorySeries {
+  name: string | null;
+  /** Twelve amounts, January first. */
+  months: number[];
+  total: number;
+}
+
+export type ExpenseGroupKind = 'category' | 'others' | 'uncategorized';
+
+export interface ExpenseGroupMember {
+  label: string;
+  total: number;
+  share: number;
+}
+
+/** One line of the spending chart and of its table — they always show the same lines. */
+export interface ExpenseGroup {
+  key: string;
+  label: string;
+  kind: ExpenseGroupKind;
+  color: string;
+  months: number[];
+  total: number;
+  /** 0–1 share of the year's spending. */
+  share: number;
+  /** The categories folded into « Autres », largest first; empty otherwise. */
+  members: ExpenseGroupMember[];
+}
+
+export const UNCATEGORIZED_LABEL = 'Sans catégorie';
+
+/**
+ * Lines of Dépenses par catégorie (§6.7): categories ranked by amount and
+ * coloured by rank. Past `topN + 1` categories, the first `topN` stay
+ * and the rest fold into « Autres (k) », in taupe. « Sans catégorie » is
+ * never folded: always its own line, last.
+ */
+export function groupExpenses(series: CategorySeries[], topN = 7): ExpenseGroup[] {
+  const spent = series.filter((s) => s.total > 0);
+  const total = spent.reduce((sum, s) => sum + s.total, 0);
+  const share = (amount: number) => amount / total;
+  const ranked = spent.filter((s) => s.name !== null).sort((a, b) => b.total - a.total);
+  const uncategorized = spent.find((s) => s.name === null);
+
+  const shown = ranked.length > topN + 1 ? ranked.slice(0, topN) : ranked;
+  const folded = ranked.slice(shown.length);
+  const groups: ExpenseGroup[] = shown.map((s, rank) => ({
+    key: s.name!,
+    label: s.name!,
+    kind: 'category',
+    color: chartColor(CHART_CATEGORY_COLORS, rank),
+    months: s.months,
+    total: s.total,
+    share: share(s.total),
+    members: [],
+  }));
+  if (folded.length > 0) {
+    const othersTotal = round(folded.reduce((sum, s) => sum + s.total, 0));
+    groups.push({
+      key: 'others',
+      label: `Autres (${folded.length})`,
+      kind: 'others',
+      color: colors.chartAutres,
+      months: Array.from({ length: 12 }, (_, m) => round(folded.reduce((sum, s) => sum + s.months[m], 0))),
+      total: othersTotal,
+      share: share(othersTotal),
+      members: folded.map((s) => ({ label: s.name!, total: s.total, share: share(s.total) })),
+    });
+  }
+  if (uncategorized) {
+    groups.push({
+      key: 'uncategorized',
+      label: UNCATEGORIZED_LABEL,
+      kind: 'uncategorized',
+      color: colors.chartSansCategorie,
+      months: uncategorized.months,
+      total: uncategorized.total,
+      share: share(uncategorized.total),
+      members: [],
+    });
+  }
+  return groups;
 }
 
 export interface ValueRange {

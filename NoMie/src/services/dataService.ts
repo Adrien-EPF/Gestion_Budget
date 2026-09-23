@@ -320,6 +320,17 @@ export interface MonthSummary {
   firstForecast: { comment: string; operationDate: string } | null;
 }
 
+/** Where a year of the Bilan annuel stands (§6.7): the selector's bounds and how much of it has happened. */
+export interface YearStatus {
+  /** Year of the earliest operation, whatever its status; `null` before the first one. */
+  firstYear: number | null;
+  currentYear: number;
+  /** Last month counted as realized (0-11): December for a past year, the current month for this one; `null` for a year to come. */
+  lastMonth: number | null;
+  /** At least one operation dated that year, whatever its status. */
+  hasOperations: boolean;
+}
+
 /** One category's line of the Bilan annuel (#25). Month arrays are indexed 0-11, like `MonthRef.month`. */
 export interface CategoryYearFlow {
   categoryId: number | null;
@@ -1017,6 +1028,34 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
         ? { comment: forecasts[0].comment, operationDate: forecasts[0].operation_date }
         : null,
     };
+  }
+
+  /**
+   * The frame of the Bilan annuel (§6.7): its year selector runs from the
+   * first year with an operation to the current one, and a year without
+   * any operation is shown as a single empty card.
+   */
+  async function getYearStatus(year: number): Promise<YearStatus> {
+    const [start, end] = yearBounds(year);
+    const row = await db.getFirstAsync<{ first: string | null; in_year: number }>(
+      `SELECT MIN(operation_date) AS first,
+         EXISTS (SELECT 1 FROM transactions WHERE operation_date >= ? AND operation_date < ?) AS in_year
+       FROM transactions`,
+      [start, end]
+    );
+    return {
+      firstYear: row?.first ? Number(row.first.slice(0, 4)) : null,
+      currentYear: now().getFullYear(),
+      lastMonth: lastCountedMonth(year),
+      hasOperations: Boolean(row?.in_year),
+    };
+  }
+
+  /** December for a past year, the current month for this one, `null` for a year to come. */
+  function lastCountedMonth(year: number): number | null {
+    const current = now();
+    if (year < current.getFullYear()) return 11;
+    return year === current.getFullYear() ? current.getMonth() : null;
   }
 
   /**
@@ -1863,6 +1902,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     listAccountSummaries,
     getBalanceTotals,
     getMonthSummary,
+    getYearStatus,
     getCategoryFlowsByMonth,
     getOperationCountsByMonth,
     getBalanceSeries,

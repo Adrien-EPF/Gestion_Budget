@@ -191,3 +191,48 @@ describe('dataService — bilan annuel (#25)', () => {
     expect(total.pointed).toEqual(Array<number>(12).fill(1000.2));
   });
 });
+
+describe('dataService — cadre du bilan annuel (§6.7)', () => {
+  let dataService: DataService;
+  let close: () => Promise<void>;
+  let courant: number;
+
+  beforeEach(async () => {
+    // Mid-September 2026.
+    ({ dataService, close } = await createTestDataService({ now: () => new Date(2026, 8, 15) }));
+    courant = (await dataService.createAccount({ name: 'Compte courant', initialBalance: 0 })).id;
+  });
+
+  afterEach(() => close());
+
+  const record = (date: string, status: TransactionStatus = 'pointe') =>
+    dataService.createTransaction({ accountId: courant, operationDate: date, amount: -10, status });
+
+  it('bounds the year selector from the first year with an operation to the current year', async () => {
+    await record('2024-11-02');
+    await record('2025-03-01', 'prevision');
+
+    expect(await dataService.getYearStatus(2025)).toEqual({
+      firstYear: 2024,
+      currentYear: 2026,
+      lastMonth: 11,
+      hasOperations: true,
+    });
+  });
+
+  it('counts the current year up to the current month, and a year to come not at all', async () => {
+    expect((await dataService.getYearStatus(2026)).lastMonth).toBe(8);
+    expect((await dataService.getYearStatus(2027)).lastMonth).toBeNull();
+  });
+
+  it('knows a year without any operation, whatever the status', async () => {
+    await record('2026-12-24', 'prevision');
+
+    expect(await dataService.getYearStatus(2025)).toMatchObject({ firstYear: 2026, hasOperations: false });
+    expect((await dataService.getYearStatus(2026)).hasOperations).toBe(true);
+  });
+
+  it('has no first year before the first operation', async () => {
+    expect((await dataService.getYearStatus(2026)).firstYear).toBeNull();
+  });
+});

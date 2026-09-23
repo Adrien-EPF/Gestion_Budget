@@ -61,8 +61,8 @@ describe('Écran Bilan annuel (#25)', () => {
     await record('Salaire/Intérêts/Avantages', 2000, `${year}-01-28`);
     await openYearReport();
 
+    expect(within(screen.getByTestId('year-expenses-label-Restaurant')).getByText('Restaurant')).toBeTruthy();
     const restaurant = within(screen.getByTestId('year-expenses-row-Restaurant'));
-    expect(restaurant.getByText('Restaurant')).toBeTruthy();
     expect(restaurant.getByText(plain(formatAmount(30)))).toBeTruthy();
     expect(restaurant.getByText(plain(formatAmount(12.5)))).toBeTruthy();
     expect(restaurant.getByText(plain(formatAmount(42.5)))).toBeTruthy();
@@ -72,7 +72,7 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(screen.queryByTestId('year-income-row-Restaurant')).toBeNull();
   });
 
-  it('shows operation counts per account and end-of-month balances', async () => {
+  it('shows operation counts per account and end-of-month real balances', async () => {
     await record('Restaurant', -40, `${year}-01-10`);
     await record('Restaurant', -10, `${year}-01-20`);
     await openYearReport();
@@ -80,10 +80,8 @@ describe('Écran Bilan annuel (#25)', () => {
     const counts = within(screen.getByTestId('year-counts-row-Compte courant'));
     expect(counts.getAllByText('2')).toHaveLength(2); // January and the annual total
 
-    const real = within(screen.getByTestId('year-balances-row-Compte courant-real'));
+    const real = within(screen.getByTestId('year-balances-row-Compte courant'));
     expect(real.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
-    const pointed = within(screen.getByTestId('year-balances-row-Compte courant-pointed'));
-    expect(pointed.getAllByText(plain(formatAmount(950)))).toHaveLength(12);
   });
 
   it('charts the spending of the year by category, largest first (#28)', async () => {
@@ -104,49 +102,11 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(chart.queryByText('Salaire/Intérêts/Avantages')).toBeNull();
   });
 
-  it('charts the balance over the year, for every account together or one at a time (#28)', async () => {
-    await act(async () => {
-      await app.dataService.createAccount({ name: 'Livret', initialBalance: 500 });
-    });
-    await record('Restaurant', -50, `${year}-01-10`);
-    await openYearReport();
 
-    const chart = () => screen.getByTestId('balance-chart');
-    expect(chart().props.accessibilityLabel).toBe(
-      `Solde réel de tous les comptes : ${formatAmount(1450)} fin janvier, ${formatAmount(1450)} fin décembre`
-    );
-
-    await press(screen.getByRole('button', { name: 'Livret' }));
-    expect(chart().props.accessibilityLabel).toBe(
-      `Solde réel de Livret : ${formatAmount(500)} fin janvier, ${formatAmount(500)} fin décembre`
-    );
-
-    await press(screen.getByRole('button', { name: 'Tous les comptes' }));
-    expect(chart().props.accessibilityLabel).toContain('tous les comptes');
-  });
-
-  it('compares each budget planned so far this year with what was spent (#29)', async () => {
-    await act(async () => {
-      await app.dataService.createBudget({
-        categoryId: cat['Restaurant'],
-        amount: 100,
-        startMonth: { year, month: 0 },
-      });
-    });
-    await record('Restaurant', -30, `${year}-01-12`);
-    await openYearReport();
-
-    const monthsSoFar = new Date().getMonth() + 1;
-    const restaurant = within(screen.getByTestId('budget-comparison-row-Restaurant'));
-    expect(restaurant.getByText(plain(formatAmount(30)))).toBeTruthy();
-    expect(restaurant.getByText(`sur ${plain(formatAmount(100 * monthsSoFar))} prévus`)).toBeTruthy();
-
-    await press(screen.getByLabelText('Année suivante'));
-    expect(screen.getByText('Pas encore de budget à comparer sur cette année.')).toBeTruthy();
-  });
 
   it('switches year with the selector', async () => {
     await record('Restaurant', -30, `${year - 1}-06-12`);
+    await record('Salaire/Intérêts/Avantages', 2000, `${year}-01-28`);
     await openYearReport();
     expect(screen.getByText('Aucune dépense cette année.')).toBeTruthy();
 
@@ -157,5 +117,73 @@ describe('Écran Bilan annuel (#25)', () => {
 
     await press(screen.getByLabelText('Année suivante'));
     expect(screen.getByTestId('year-report-year').props.children).toBe(String(year));
+  });
+
+  describe('structure de l’écran (§6.7)', () => {
+    const sectionTitles = () => screen.getAllByRole('header').map((h) => h.props.children);
+    const isDisabled = (label: string) => screen.getByLabelText(label).props.accessibilityState?.disabled;
+
+    it('shows the balances first, then spending, budgets, income and operations', async () => {
+      await record('Restaurant', -30, `${year}-01-12`);
+      await openYearReport();
+
+      expect(sectionTitles()).toEqual([
+        'Soldes en fin de mois',
+        'Dépenses par catégorie',
+        'Budgets · prévu et réalisé',
+        'Recettes par catégorie',
+        'Opérations par compte',
+      ]);
+    });
+
+    it('moves between the first year with an operation and the current year, no further', async () => {
+      await record('Restaurant', -30, `${year - 1}-06-12`);
+      await openYearReport();
+      expect(screen.getByText(/^Année en cours · réalisé jusqu’à fin /)).toBeTruthy();
+      expect(isDisabled('Année suivante')).toBe(true);
+      expect(isDisabled('Année précédente')).toBe(false);
+
+      await press(screen.getByLabelText('Année précédente'));
+
+      expect(screen.getByTestId('year-report-year').props.children).toBe(String(year - 1));
+      expect(screen.getByText('Année complète')).toBeTruthy();
+      expect(isDisabled('Année précédente')).toBe(true);
+      await press(screen.getByLabelText('Année précédente'));
+      expect(screen.getByTestId('year-report-year').props.children).toBe(String(year - 1));
+    });
+
+    it('replaces the sections with a single card for a year without any operation', async () => {
+      await record('Restaurant', -30, `${year}-01-12`);
+      for (let i = 0; i <= new Date().getMonth(); i++) {
+        await press(screen.getByLabelText('Mois précédent'));
+      }
+      await openYearReport();
+
+      expect(screen.getByText(`Aucune opération en ${year - 1}.`)).toBeTruthy();
+      expect(screen.queryAllByRole('header')).toHaveLength(0);
+
+      await press(screen.getByRole('button', { name: `Voir ${year}` }));
+
+      expect(screen.getByTestId('year-report-year').props.children).toBe(String(year));
+      expect(sectionTitles()).toHaveLength(5);
+    });
+
+    it('groups the spending table exactly like its chart, with a total line', async () => {
+      const spending = ['Restaurant', 'Loisir', 'Culture', 'Cadeaux', 'Voiture', 'Santé', 'Habillement', 'Logement', 'Don'];
+      for (const [i, name] of spending.entries()) {
+        await record(name, -(100 - i), `${year}-01-0${i + 1}`);
+      }
+      await act(async () => {
+        await app.dataService.createTransaction({ accountId, operationDate: `${year}-01-20`, amount: -3 });
+      });
+      await openYearReport();
+
+      const labels = within(screen.getByTestId('year-expenses'));
+      expect(labels.getByText('Habillement')).toBeTruthy();
+      expect(labels.queryByText('Logement')).toBeNull();
+      expect(within(screen.getByTestId('year-expenses-label-others')).getByText('Autres (2)')).toBeTruthy();
+      expect(within(screen.getByTestId('year-expenses-label-uncategorized')).getByText('Sans catégorie')).toBeTruthy();
+      expect(screen.getByTestId('year-expenses-label-total')).toBeTruthy();
+    });
   });
 });

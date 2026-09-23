@@ -48,6 +48,22 @@ colors:
   budget-ok: "#4C7A6C"
   budget-watch: "#C79A56"
   link: "#3A5F54"
+  chart-1: "#6F9486"
+  chart-2: "#C2A06A"
+  chart-3: "#9A8DB4"
+  chart-4: "#C29478"
+  chart-5: "#8499B3"
+  chart-6: "#7BA8A1"
+  chart-7: "#C0939A"
+  chart-8: "#99A57A"
+  chart-9: "#C6B26F"
+  chart-autres: "#ADA69A"
+  chart-sans-categorie: "#CFCAC0"
+  chart-sous-zero: "#F6F3EE"
+  chart-compte-1: "#4C7A6C"
+  chart-compte-2: "#8499B3"
+  chart-compte-3: "#9A8DB4"
+  chart-compte-4: "#C2A06A"
 
 typography:
   display-lg:
@@ -342,6 +358,16 @@ tinté associé, jamais par une icône d'alerte :
 - **Budget dans les clous** (`{colors.budget-ok}` — `#4C7A6C`): `{component.progress-fill-ok}`.
 - **Budget à surveiller** (`{colors.budget-watch}` — `#C79A56`): `{component.progress-fill-watch}` — utilisé même en dépassement ; il n'existe **aucune** troisième couleur "danger" plus intense. Le dépassement se lit dans le texte ("un peu plus que d'habitude"), pas dans une couleur qui s'aggrave.
 - **Link** (`{colors.link}` — `#3A5F54`): liens inline, actions secondaires textuelles.
+
+### Graphiques (Bilan annuel)
+Palette catégorielle du Bilan annuel (handoff §6.7) : même famille que les pastels, remontée à une
+luminance moyenne équivalente pour qu'aucune teinte ne domine. Attribution **par rang de montant**,
+pas par catégorie fixe.
+- **chart-1 … chart-9** (`#6F9486` sauge, `#C2A06A` ocre, `#9A8DB4` lavande, `#C29478` argile, `#8499B3` bleu ardoise, `#7BA8A1` eau, `#C0939A` rose poudré, `#99A57A` olive, `#C6B26F` blé — réserve).
+- **Autres** (`{colors.chart-autres}` — `#ADA69A`): catégories regroupées, taupe.
+- **Sans catégorie** (`{colors.chart-sans-categorie}` — `#CFCAC0`, = hairline-strong): toujours une ligne à part, en dernier.
+- **Sous zéro** (`{colors.chart-sous-zero}` — `#F6F3EE`): fond très léger sous la ligne 0 € de l'évolution du solde ; la courbe garde sa couleur, jamais de rouge.
+- **Comptes** (`chart-compte-1 … 4` — `#4C7A6C`, `#8499B3`, `#9A8DB4`, `#C2A06A`): une couleur par compte, dans l'ordre des comptes de l'utilisateur.
 
 ## Typography
 
