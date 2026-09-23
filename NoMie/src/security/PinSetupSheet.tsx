@@ -6,7 +6,7 @@ import { Chips } from '../components/Chips';
 import { TextField } from '../components/TextField';
 import { useDataService } from '../services/DataServiceContext';
 import { colors, spacing, textStyle } from '../theme/tokens';
-import { PIN_LENGTH, PinDots, PinPad, type PinKey } from './PinPad';
+import { PinCreateFlow } from './PinCreateFlow';
 import type { SecurityQuestionId } from './security';
 import { SECURITY_QUESTIONS } from './securityQuestions';
 import { useSecurityStore } from './SecurityStoreContext';
@@ -48,15 +48,13 @@ export function PinSetupSheet({ visible, onClose }: PinSetupSheetProps) {
   );
 }
 
-type Step = 'create' | 'confirm' | 'questions';
+type Step = 'create' | 'questions';
 
 function PinSetupWizard({ onClose }: { onClose: () => void }) {
   const securityStore = useSecurityStore();
   const dataService = useDataService();
   const [step, setStep] = useState<Step>('create');
   const [pin, setPin] = useState('');
-  const [candidate, setCandidate] = useState('');
-  const [mismatch, setMismatch] = useState(false);
   const [slots, setSlots] = useState<[QuestionSlot, QuestionSlot]>(EMPTY_SLOTS);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
 
@@ -66,41 +64,6 @@ function PinSetupWizard({ onClose }: { onClose: () => void }) {
       next[index] = { ...next[index], ...changes };
       return next;
     });
-
-  const onCreateKeyPress = (key: PinKey) => {
-    if (key === 'backspace') {
-      setPin((current) => current.slice(0, -1));
-      return;
-    }
-    setPin((current) => {
-      if (current.length >= PIN_LENGTH) return current;
-      const next = current + key;
-      if (next.length === PIN_LENGTH) setStep('confirm');
-      return next;
-    });
-  };
-
-  const onConfirmKeyPress = (key: PinKey) => {
-    if (key === 'backspace') {
-      setCandidate((current) => current.slice(0, -1));
-      return;
-    }
-    setCandidate((current) => {
-      if (current.length >= PIN_LENGTH) return current;
-      const next = current + key;
-      if (next.length === PIN_LENGTH) {
-        if (next === pin) {
-          setStep('questions');
-        } else {
-          setMismatch(true);
-          setPin('');
-          setStep('create');
-          return '';
-        }
-      }
-      return next;
-    });
-  };
 
   const submitQuestions = async () => {
     const [first, second] = slots;
@@ -119,28 +82,14 @@ function PinSetupWizard({ onClose }: { onClose: () => void }) {
 
   if (step === 'create') {
     return (
-      <View style={styles.form}>
-        <Text style={[textStyle('headingMd'), styles.title]}>Crée ton code PIN</Text>
-        <Text style={[textStyle('bodyMd'), styles.body]}>Choisis un code à 4 chiffres.</Text>
-        <PinDots length={pin.length} />
-        <Text style={[textStyle('bodySm'), styles.error, !mismatch && styles.errorHidden]}>
-          Les deux codes ne correspondaient pas, recommence.
-        </Text>
-        <PinPad onKeyPress={onCreateKeyPress} />
-        <Button label="Annuler" variant="secondary" onPress={onClose} />
-      </View>
-    );
-  }
-
-  if (step === 'confirm') {
-    return (
-      <View style={styles.form}>
-        <Text style={[textStyle('headingMd'), styles.title]}>Confirme ton code PIN</Text>
-        <Text style={[textStyle('bodyMd'), styles.body]}>Saisis-le une seconde fois.</Text>
-        <PinDots length={candidate.length} />
-        <PinPad onKeyPress={onConfirmKeyPress} />
-        <Button label="Annuler" variant="secondary" onPress={onClose} />
-      </View>
+      <PinCreateFlow
+        createTitle="Crée ton code PIN"
+        onConfirmed={(confirmedPin) => {
+          setPin(confirmedPin);
+          setStep('questions');
+        }}
+        onClose={onClose}
+      />
     );
   }
 
@@ -210,9 +159,6 @@ const styles = StyleSheet.create({
   },
   error: {
     color: colors.amountNegative,
-  },
-  errorHidden: {
-    opacity: 0,
   },
   actions: {
     flexDirection: 'row',

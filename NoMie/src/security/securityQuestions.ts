@@ -9,3 +9,8 @@ export const SECURITY_QUESTIONS: { id: SecurityQuestionId; label: string }[] = [
   { id: 'firstCar', label: 'Modèle de votre première voiture' },
   { id: 'favoriteDish', label: 'Plat que vous cuisinez le plus souvent' },
 ];
+
+/** The French label for a question id, as shown when re-asking it (#24 « Code oublié ? »). */
+export function questionLabel(id: SecurityQuestionId): string {
+  return SECURITY_QUESTIONS.find((question) => question.id === id)?.label ?? '';
+}

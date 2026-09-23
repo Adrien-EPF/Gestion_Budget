@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Image, Modal, StyleSheet, Text, View } from 'react-native';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { Button } from '../components/Button';
+import { ForgotPinSheet } from './ForgotPinSheet';
 import { PIN_LENGTH, PinDots, PinPad, type PinKey } from './PinPad';
 import type { SecurityStore } from './security';
 
@@ -35,6 +36,24 @@ export function LockScreen({
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pinConfigured, setPinConfigured] = useState(false);
+  const [forgotVisible, setForgotVisible] = useState(false);
+  // « Code oublié ? » only makes sense on the real app-wide lock (#24, #19 user
+  // story 9) — not on this screen's other use as a Réglages re-auth gate
+  // (`onCancel` set), where resetting the PIN as a side effect of confirming
+  // a *disable* would be surprising and is out of scope.
+  const canForgotPin = pinConfigured && !onCancel;
+
+  useEffect(() => {
+    if (onCancel) return;
+    let cancelled = false;
+    securityStore.hasPin().then((hasPin) => {
+      if (!cancelled) setPinConfigured(hasPin);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [securityStore, onCancel]);
 
   useEffect(() => {
     if (!biometricEnabled) return;
@@ -85,15 +104,38 @@ export function LockScreen({
       <View style={styles.root}>
         <Image source={require('../../assets/Logo.jpg')} style={styles.logo} />
         <Text style={[textStyle('headingMd'), styles.title]}>{title}</Text>
-        <PinDots length={pin.length} />
-        <Text style={[textStyle('bodySm'), styles.error, !error && styles.errorHidden]}>
-          Code incorrect, réessaie.
-        </Text>
-        <PinPad onKeyPress={onKeyPress} disabled={busy} />
-        {onCancel ? (
-          <Button label="Annuler" variant="secondary" onPress={onCancel} style={styles.cancel} />
-        ) : null}
+        {forgotVisible ? null : (
+          <>
+            <PinDots length={pin.length} />
+            <Text style={[textStyle('bodySm'), styles.error, !error && styles.errorHidden]}>
+              Code incorrect, réessaie.
+            </Text>
+            <PinPad onKeyPress={onKeyPress} disabled={busy} />
+            {canForgotPin ? (
+              <Button
+                label="Code oublié ?"
+                variant="ghost"
+                onPress={() => setForgotVisible(true)}
+                style={styles.forgot}
+              />
+            ) : null}
+            {onCancel ? (
+              <Button label="Annuler" variant="secondary" onPress={onCancel} style={styles.cancel} />
+            ) : null}
+          </>
+        )}
       </View>
+      {canForgotPin ? (
+        <ForgotPinSheet
+          visible={forgotVisible}
+          securityStore={securityStore}
+          onClose={() => setForgotVisible(false)}
+          onReset={() => {
+            setForgotVisible(false);
+            onUnlock();
+          }}
+        />
+      ) : null}
     </Modal>
   );
 }
@@ -123,6 +165,9 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   cancel: {
+    marginTop: spacing.xs,
+  },
+  forgot: {
     marginTop: spacing.xs,
   },
 });
