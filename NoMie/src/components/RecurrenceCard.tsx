@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { RecurrenceRuleItem } from '../services/dataService';
 import { useDataService } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
 import { describeAutomation, describeFrequency } from '../utils/recurrenceCopy';
 import { Switch } from './Switch';
@@ -61,6 +61,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
     gap: spacing.sm,
   },

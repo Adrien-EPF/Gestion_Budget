@@ -5,7 +5,7 @@ import { Button } from '../components/Button';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import type { Category } from '../services/dataService';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 
 interface CategoriesScreenProps {
   visible: boolean;
@@ -132,6 +132,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     overflow: 'hidden',
   },
   row: {

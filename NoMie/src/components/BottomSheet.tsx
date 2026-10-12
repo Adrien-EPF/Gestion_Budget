@@ -10,7 +10,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, rounded, spacing } from '../theme/tokens';
+import { colors, rounded, shadows, spacing } from '../theme/tokens';
 import { useKeyboardHeight } from './useKeyboardHeight';
 
 interface BottomSheetProps {
@@ -107,7 +107,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   scrim: {
-    backgroundColor: 'rgba(35,35,35,0.32)',
+    backgroundColor: colors.scrim,
   },
   sheet: {
     backgroundColor: colors.surface,
@@ -115,11 +115,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: rounded.xl,
     padding: spacing.xl,
     flexShrink: 1,
-    shadowColor: 'rgb(35,35,35)',
-    shadowOffset: { width: 0, height: -8 },
-    shadowOpacity: 0.14,
-    shadowRadius: 28,
-    elevation: 16,
+    ...shadows.sheet,
   },
   handle: {
     width: 40,

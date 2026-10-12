@@ -6,7 +6,7 @@ import { Screen } from '../components/Screen';
 import { TransactionRow } from '../components/TransactionRow';
 import type { Account, AccountSummary, TransactionListItem } from '../services/dataService';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatLongDate, toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 import type { TabScreenProps } from '../navigation/types';
@@ -268,6 +268,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
     gap: spacing.sm,
   },
@@ -355,6 +356,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
   },

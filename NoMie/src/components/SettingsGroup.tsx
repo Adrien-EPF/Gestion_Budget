@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, fontFamilies, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { Switch } from './Switch';
 
 interface SettingsGroupProps {
@@ -90,6 +90,7 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     overflow: 'hidden',
   },
   divider: {

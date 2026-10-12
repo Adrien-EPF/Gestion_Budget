@@ -1,5 +1,10 @@
 # Handoff : NoMie — 5 écrans principaux (Accueil, Comptes, Budgets, Récurrences, Réglages)
 
+> **Valeurs visuelles : voir `DESIGN.md`.** Ce handoff décrit la structure et le comportement des écrans. Depuis
+> la refonte visuelle (#39 : Manrope, neutres rosés, rayons 10/14/20/28, ombres douces), les couleurs, tailles,
+> rayons et la police cités plus bas (Inter, `#FAF8F5`, `#4C7A6C`, rayon 16…) sont ceux d'origine ; `DESIGN.md`
+> et `NoMie/src/theme/tokens.ts` font foi.
+
 À placer à la racine du dépôt (renommé `NOMIE_DESIGN_HANDOFF.md` si tu préfères) : ce fichier est
 auto-suffisant, un développeur qui n'était pas dans la conversation de design peut implémenter les
 écrans à partir de lui seul.

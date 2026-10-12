@@ -8,7 +8,7 @@ import { Screen } from '../components/Screen';
 import { useMonth } from '../navigation/MonthContext';
 import type { Budget, BudgetOverview } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { describeMonthProgress, monthElapsedFraction } from '../utils/budgetCopy';
 import { formatAmount } from '../utils/formatAmount';
 import { BudgetYearScreen } from './BudgetYearScreen';
@@ -101,6 +101,7 @@ const styles = StyleSheet.create({
   summary: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
     gap: spacing.sm,
   },

@@ -1,7 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { PendingAdvances } from '../services/dataService';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
 
 /** Accueil › Avances (handoff §6.1 point 5): what is waiting to be paid back. */
@@ -34,6 +34,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
   },
   text: {

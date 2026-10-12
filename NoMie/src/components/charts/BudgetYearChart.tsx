@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { monthName } from '../../navigation/formatMonthLabel';
 import type { BudgetYear } from '../../services/dataService';
-import { colors, rounded, spacing, textStyle } from '../../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../../theme/tokens';
 import { describeBudgetMonth, summarizeBudgetYear, type BudgetMonthPill } from '../../utils/budgetYearCopy';
 import { MonthLetters, MonthStepper } from './MonthStepper';
 
@@ -116,6 +116,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     paddingTop: spacing.xs,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,

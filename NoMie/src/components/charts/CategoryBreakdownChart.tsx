@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { colors, rounded, spacing, textStyle } from '../../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../../theme/tokens';
 import { formatAmount } from '../../utils/formatAmount';
 import { describeMonthlySpread, expensePeriodNote, formatShare } from '../../utils/yearReportCopy';
 import type { ExpenseGroup } from './chartGeometry';
@@ -135,6 +135,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     paddingTop: spacing.lg,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.sm,

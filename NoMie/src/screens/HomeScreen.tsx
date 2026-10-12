@@ -10,7 +10,7 @@ import { useMonth } from '../navigation/MonthContext';
 import type { TabScreenProps } from '../navigation/types';
 import type { MonthSummary } from '../services/dataService';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { dayOfMonth } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 import { YearReportScreen } from './YearReportScreen';
@@ -276,6 +276,7 @@ const styles = StyleSheet.create({
     width: 168,
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.md,
     gap: 4,
   },
@@ -326,6 +327,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
   },
   monthColumn: {

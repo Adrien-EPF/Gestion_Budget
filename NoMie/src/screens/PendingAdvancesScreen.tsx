@@ -4,7 +4,7 @@ import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatLongDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 
@@ -74,6 +74,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
     gap: spacing.sm,
   },

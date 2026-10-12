@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import type { BudgetProgress } from '../services/dataService';
 import { useDataService } from '../services/DataServiceContext';
-import { colors, rounded, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { describeBudget, formatBudgetRatio } from '../utils/budgetCopy';
 import { Button } from './Button';
 import { ProgressBar } from './ProgressBar';
@@ -70,6 +70,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     padding: spacing.lg,
     gap: spacing.xs,
   },

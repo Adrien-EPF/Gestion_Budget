@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { colors, fontFamilies, rounded, textStyle } from '../theme/tokens';
+import { colors, fontFamilies, rounded, shadows, textStyle } from '../theme/tokens';
 
 const MONTHS_SHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const DASH = '—';
@@ -123,6 +123,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     overflow: 'hidden',
   },
   labelColumn: {

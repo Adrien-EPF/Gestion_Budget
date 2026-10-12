@@ -11,15 +11,7 @@ import { YearTable, type YearTableRow } from '../components/YearTable';
 import { monthName } from '../navigation/formatMonthLabel';
 import type { BudgetYearOverview, CategoryYearFlow, YearStatus } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
-import {
-  CHART_ACCOUNT_COLORS,
-  CHART_CATEGORY_COLORS,
-  chartColor,
-  colors,
-  rounded,
-  spacing,
-  textStyle,
-} from '../theme/tokens';
+import { CHART_ACCOUNT_COLORS, CHART_CATEGORY_COLORS, chartColor, colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
 
 interface YearReportScreenProps {
@@ -354,6 +346,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
   },
   emptyYear: {
     paddingVertical: spacing.xxl,

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
-import { colors, rounded } from '../theme/tokens';
+import { colors, rounded, shadows } from '../theme/tokens';
 import { QuickEntrySheet } from './QuickEntrySheet';
 
 /** Global quick-entry FAB, visible on all 5 screens (handoff §5). */
@@ -30,16 +30,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 64 + 16,
-    width: 56,
-    height: 56,
+    width: 60,
+    height: 60,
     borderRadius: rounded.full,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: 'rgb(58,95,84)',
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    shadowOpacity: 0.28,
-    elevation: 4,
+    ...shadows.fab,
   },
   glyph: {
     color: colors.onPrimary,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
-import { colors, rounded, spacing, textStyle } from '../../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../../theme/tokens';
 import { formatAmount } from '../../utils/formatAmount';
 import { describeBelowZero, forecastLegend, monthEndLabel } from '../../utils/yearReportCopy';
 import { columnPath, yAxis } from './chartGeometry';
@@ -284,6 +284,7 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
+    ...shadows.card,
     paddingTop: spacing.md,
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.xs,
