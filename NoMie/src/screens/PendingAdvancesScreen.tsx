@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
 import { EmptyState } from '../components/EmptyState';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
-import { useDataService, useServiceQuery } from '../services/DataServiceContext';
+import { ReimbursementSheet } from '../components/ReimbursementSheet';
+import type { PendingAdvance } from '../services/dataService';
+import { useServiceQuery } from '../services/DataServiceContext';
 import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatLongDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
@@ -14,14 +16,14 @@ interface PendingAdvancesScreenProps {
 }
 
 /**
- * Avances en attente, reached from Réglages > Structure (#21, #27) — a
+ * Avances en attente, reached from Réglages > Structure (#21, #27, #45) — a
  * full-screen `Modal` owned by Réglages, like `CategoriesScreen`. Every
- * portion marked Avancé and not yet reimbursed, newest first; marking one
- * reimbursed drops it here, on Accueil's `AdvancesCard` and out of the
+ * operation or portion marked Avancé and still waiting, newest first; « Remboursé »
+ * opens the reimbursement sheet, and confirming it drops the advance here, on Accueil's `AdvancesCard` and out of the
  * pending total, all through the data service's change notifications.
  */
 export function PendingAdvancesScreen({ visible, onClose }: PendingAdvancesScreenProps) {
-  const dataService = useDataService();
+  const [reimbursing, setReimbursing] = useState<PendingAdvance | null>(null);
   const advances = useServiceQuery((s) => s.listPendingAdvances());
   const list = advances ?? [];
 
@@ -35,7 +37,7 @@ export function PendingAdvancesScreen({ visible, onClose }: PendingAdvancesScree
         ) : (
           <ScrollView contentContainerStyle={styles.content}>
             {list.map((advance) => (
-              <View key={advance.splitId} style={styles.card}>
+              <View key={'splitId' in advance.ref ? `s${advance.ref.splitId}` : `t${advance.ref.transactionId}`} style={styles.card}>
                 <View style={styles.cardHeader}>
                   <Text style={[textStyle('headingSm'), styles.cardTitle]} numberOfLines={1}>
                     {advance.categoryName ?? 'Sans catégorie'}
@@ -48,14 +50,15 @@ export function PendingAdvancesScreen({ visible, onClose }: PendingAdvancesScree
                   {`${advance.accountName} · ${formatLongDate(advance.operationDate)}`}
                 </Text>
                 <Button
-                  label="Marquer comme remboursée"
+                  label="Remboursé"
                   variant="secondary"
-                  onPress={() => dataService.markAdvanceReimbursed(advance.splitId)}
+                  onPress={() => setReimbursing(advance)}
                 />
               </View>
             ))}
           </ScrollView>
         )}
+        <ReimbursementSheet advance={reimbursing} onClose={() => setReimbursing(null)} />
       </View>
     </Modal>
   );

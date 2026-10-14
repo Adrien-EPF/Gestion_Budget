@@ -1,7 +1,7 @@
 import { act, screen } from '@testing-library/react-native';
 import type { DataService } from '../services/dataService';
 import { formatAmount } from '../utils/formatAmount';
-import { plain, press, renderApp } from '../test-utils/renderWithApp';
+import { plain, press, renderApp, typeInto } from '../test-utils/renderWithApp';
 
 async function openAdvances() {
   await press(screen.getByLabelText('Réglages'));
@@ -62,7 +62,8 @@ describe('Écran Avances en attente (#21, #27)', () => {
     await seedAdvance(app.dataService, 'EdenRed', 28.5, '2026-09-11');
     await openAdvances();
 
-    await press(screen.getByText('Marquer comme remboursée'));
+    await press(screen.getByText('Remboursé'));
+    await press(screen.getByText('Enregistrer le remboursement'));
 
     expect(screen.getByText('Aucune avance en attente.')).toBeTruthy();
     expect(await app.dataService.getPendingAdvances()).toEqual({ count: 0, total: 0 });
@@ -77,9 +78,64 @@ describe('Écran Avances en attente (#21, #27)', () => {
     await seedAdvance(app.dataService, 'Compte courant', 40, '2026-09-12');
     await openAdvances();
 
-    await press(screen.getAllByText('Marquer comme remboursée')[0]);
+    await press(screen.getAllByText('Remboursé')[0]);
+    await press(screen.getByText('Enregistrer le remboursement'));
 
-    expect(screen.getAllByText('Marquer comme remboursée')).toHaveLength(1);
+    expect(screen.getAllByText('Remboursé')).toHaveLength(1);
+    expect((await app.dataService.getPendingAdvances()).count).toBe(1);
+  });
+
+  it('lists a whole-operation advance, with the amount owed', async () => {
+    await act(async () => {
+      const account = await app.dataService.createAccount({ name: 'Courant', initialBalance: 0 });
+      const advance = (await app.dataService.listCategories()).find((c) => c.name === 'Avancé')!;
+      await app.dataService.createTransaction({
+        accountId: account.id,
+        operationDate: '2026-09-12',
+        amount: -64,
+        categoryId: advance.id,
+        advanceType: 'en_attente',
+        comment: 'Billet de train',
+      });
+    });
+    await openAdvances();
+
+    expect(screen.getByText('Courant · 12 sept. 2026')).toBeTruthy();
+    expect(screen.getByText(plain(formatAmount(64)))).toBeTruthy();
+  });
+
+  it('proposes the advance’s account, today and its amount, all editable, and records the refund', async () => {
+    await seedAdvance(app.dataService, 'EdenRed', 28.5, '2026-09-11');
+    await openAdvances();
+
+    await press(screen.getByText('Remboursé'));
+    expect(screen.getByLabelText('Montant').props.value).toBe('14,25');
+    await typeInto(screen.getByLabelText('Montant'), '12');
+    await typeInto(screen.getByLabelText('Date'), '25/09/2026');
+    await press(screen.getByText('Enregistrer le remboursement'));
+
+    const [account] = (await app.dataService.listAccounts()).filter((a) => a.name === 'EdenRed');
+    const refund = (
+      await app.dataService.listMonthTransactions({ year: 2026, month: 8 })
+    ).find((t) => t.comment === 'Remboursement')!;
+    expect(refund).toMatchObject({
+      accountId: account.id,
+      operationDate: '2026-09-25',
+      amount: 12,
+      offBalance: true,
+      status: 'non_pointe',
+    });
+  });
+
+  it('does not record a refund without a positive amount', async () => {
+    await seedAdvance(app.dataService, 'EdenRed', 28.5, '2026-09-11');
+    await openAdvances();
+
+    await press(screen.getByText('Remboursé'));
+    await typeInto(screen.getByLabelText('Montant'), '0');
+
+    expect(screen.getByText('Le montant doit être supérieur à zéro.')).toBeTruthy();
+    await press(screen.getByText('Enregistrer le remboursement'));
     expect((await app.dataService.getPendingAdvances()).count).toBe(1);
   });
 

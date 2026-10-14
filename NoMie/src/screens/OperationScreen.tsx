@@ -13,6 +13,7 @@ import type {
   Transaction,
   TransactionStatus,
 } from '../services/dataService';
+import { COUNTERPART_DEFAULT_CATEGORY_NAME } from '../data/defaultCategories';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, rounded, spacing, textStyle } from '../theme/tokens';
 import { parseMoneyInput } from '../utils/amountInput';
@@ -56,18 +57,23 @@ const ADVANCE_OPTIONS: ChipOption<AdvanceType>[] = [
 
 const toText = (value: number) => String(value).replace('.', ',');
 
+const IMPOTS_CATEGORY_NAME = 'Impôts';
+
 /**
- * Écran Opération (#43, #44): create, edit and delete an operation, and
- * split it over several categories. A full-screen `Modal`, like Réglages
+ * Écran Opération (#43, #44, #45, #46): create, edit and delete an operation, split it over
+ * several categories, mark it Avancé or Hors bilan, or enter it as a Fantôme with its contrepartie. A full-screen `Modal`, like Réglages
  * and the Bilan annuel, opened from anywhere through `useOperationEditor`.
  */
 export function OperationScreen({ target, onClose }: OperationScreenProps) {
   const editingId = target.kind === 'edit' ? target.id : null;
-  // Both legs in one read: the form starts from them once, so they must land together.
+  // Every linked leg in one read: the form starts from them once, so they must land together.
   const loaded = useServiceQuery(async (s) => {
     const existing = editingId === null ? null : await s.getTransaction(editingId);
     const mirror = existing?.mirrorTransactionId ? await s.getTransaction(existing.mirrorTransactionId) : null;
-    return { existing, mirror };
+    const counterpart = existing?.counterpartTransactionId
+      ? await s.getTransaction(existing.counterpartTransactionId)
+      : null;
+    return { existing, mirror, counterpart };
   }, [editingId]);
   const accounts = useServiceQuery((s) => s.listAccounts());
   const categories = useServiceQuery((s) => s.listCategories());
@@ -88,6 +94,7 @@ export function OperationScreen({ target, onClose }: OperationScreenProps) {
             target={target}
             existing={loaded.existing}
             mirror={loaded.mirror}
+            counterpart={loaded.counterpart}
             accounts={accounts}
             categories={categories}
             defaultAccountId={currentAccount?.id ?? accounts[0]?.id ?? null}
@@ -103,6 +110,7 @@ interface OperationFormProps {
   target: OperationTarget;
   existing: Transaction | null;
   mirror: Transaction | null;
+  counterpart: Transaction | null;
   accounts: { id: number; name: string }[];
   categories: Category[];
   defaultAccountId: number | null;
@@ -113,6 +121,7 @@ function OperationForm({
   target,
   existing,
   mirror,
+  counterpart,
   accounts,
   categories,
   defaultAccountId,
@@ -144,6 +153,15 @@ function OperationForm({
     existing ? (initialSplits.length > 0 ? null : existing.categoryId) : (draft?.categoryId ?? null)
   );
   const [destinationId, setDestinationId] = useState<number | null>(mirror?.accountId ?? null);
+  const [offBalanceChoice, setOffBalanceChoice] = useState(existing?.offBalance ?? false);
+  const [advanceType, setAdvanceType] = useState<AdvanceType>(existing?.advanceType ?? 'reglee_ailleurs');
+  // Null until the user touches the switch: on by default for Impôts, off otherwise.
+  const [counterpartChoice, setCounterpartChoice] = useState<boolean | null>(null);
+  const [counterpartCategoryId, setCounterpartCategoryId] = useState<number | null>(
+    counterpart
+      ? counterpart.categoryId
+      : (categories.find((c) => c.name === COUNTERPART_DEFAULT_CATEGORY_NAME)?.id ?? null)
+  );
 
   const [splitting, setSplitting] = useState(initialSplits.length > 0);
   const [splitMode, setSplitMode] = useState<SplitMode>('amount');
@@ -163,6 +181,24 @@ function OperationForm({
   const isMovementCategory = virementCategory !== null && categoryId === virementCategory.id;
   const canSplit = !isMovement && !isMovementCategory;
   const kind = isExpense ? 'expense' : 'income';
+  const isAdvance = !splitting && avanceCategory !== null && categoryId === avanceCategory.id;
+  const isFantome = status === 'fantome';
+  // Hors bilan: imposed on Avancé and movements, impossible on a Fantôme (it would count nowhere).
+  const offBalanceLocked = isAdvance || isMovement || isMovementCategory;
+  const offBalance = offBalanceLocked || (!isFantome && offBalanceChoice);
+  const linkedCounterpart = counterpart !== null;
+  const canAddCounterpart = isFantome && !isMovement && !linkedCounterpart;
+  const categoryName = categories.find((c) => c.id === categoryId)?.name;
+  const addCounterpart = canAddCounterpart && (counterpartChoice ?? categoryName === IMPOTS_CATEGORY_NAME);
+  const counterpartKind = isExpense ? 'income' : 'expense';
+  const counterpartCategoryOptions = categories
+    .filter(
+      (c) =>
+        c.systemRole === null &&
+        (c.kind === counterpartKind || c.kind === 'both') &&
+        (!c.hidden || c.id === counterpartCategoryId)
+    )
+    .map((c) => ({ value: c.id, label: c.name }));
   const categoryOptions = categories
     .filter(
       (c) =>
@@ -256,21 +292,25 @@ function OperationForm({
       categoryId: splitting ? null : categoryId,
       status,
       splits,
+      offBalance,
+      ...(isAdvance && isExpense ? { advanceType } : {}),
       ...(isMovementCategory || isMovement ? { transferToAccountId: destinationId ?? undefined } : {}),
+      ...(isFantome && (addCounterpart || linkedCounterpart)
+        ? { counterpart: { categoryId: counterpartCategoryId } }
+        : {}),
     };
     try {
       if (existing) {
-        await dataService.updateTransaction(existing.id, {
-          ...values,
-          categoryId: splitting ? (splits[0]?.categoryId ?? null) : categoryId,
-        });
+        await dataService.updateTransaction(existing.id, values);
       } else {
         await dataService.createTransaction(values);
       }
       onClose();
     } catch {
       // The service's rules are in English and meant for developers; the form already guards the usual cases.
-      setError('Enregistrement impossible : un fantôme ne peut pas être hors bilan, ni un mouvement entre comptes être un fantôme.');
+      setError(
+        'Enregistrement impossible : un fantôme ne peut pas être hors bilan, un mouvement entre comptes ne peut pas être un fantôme, et un fantôme lié à sa contrepartie le reste.'
+      );
     }
   };
 
@@ -330,6 +370,20 @@ function OperationForm({
 
       <Section label="Statut">
         <Chips options={STATUS_OPTIONS} value={status} onChange={setStatus} />
+        {isFantome ? (
+          <View style={styles.help} testID="fantome-help">
+            <Text style={[textStyle('bodySm'), styles.note]}>
+              Un fantôme compte au bilan, pas dans tes soldes, et n’est jamais proposé au pointage.
+            </Text>
+            <Text style={[textStyle('bodySm'), styles.note]}>
+              Tickets resto : la recharge de la carte reste une recette normale ; seule la part salariale retenue sur
+              la fiche de paie est un fantôme.
+            </Text>
+            <Text style={[textStyle('bodySm'), styles.note]}>
+              Dépense payée par quelqu’un d’autre : saisis-la en fantôme dans sa vraie catégorie, sans contrepartie.
+            </Text>
+          </View>
+        ) : null}
       </Section>
 
       {isMovement ? (
@@ -347,6 +401,12 @@ function OperationForm({
         </Section>
       )}
 
+      {isAdvance && isExpense ? (
+        <Section label="Avance">
+          <Chips options={ADVANCE_OPTIONS} value={advanceType} onChange={setAdvanceType} />
+        </Section>
+      ) : null}
+
       {isMovementCategory || isMovement ? (
         <Section label="Compte de destination">
           <Chips
@@ -355,6 +415,56 @@ function OperationForm({
             onChange={setDestinationId}
           />
         </Section>
+      ) : null}
+
+      <View style={styles.card}>
+        <View style={styles.cardRow}>
+          <Text style={[textStyle('bodyMdMedium'), styles.cardTitle]}>Hors bilan</Text>
+          <Switch
+            value={offBalance}
+            onValueChange={setOffBalanceChoice}
+            accessibilityLabel="Hors bilan"
+            disabled={offBalanceLocked || isFantome}
+          />
+        </View>
+        <Text style={[textStyle('bodySm'), styles.note]}>
+          {offBalanceLocked
+            ? 'Toujours hors bilan ici : l’opération compte dans les soldes, pas dans les dépenses ni les recettes.'
+            : isFantome
+              ? 'Un fantôme ne peut pas être hors bilan : il ne compterait nulle part.'
+              : 'Compte dans les soldes, pas dans les dépenses ni les recettes.'}
+        </Text>
+      </View>
+
+      {canAddCounterpart || linkedCounterpart ? (
+        <View style={styles.card} testID="counterpart-section">
+          {canAddCounterpart ? (
+            <View style={styles.cardRow}>
+              <Text style={[textStyle('bodyMdMedium'), styles.cardTitle]}>Ajouter la contrepartie</Text>
+              <Switch
+                value={addCounterpart}
+                onValueChange={setCounterpartChoice}
+                accessibilityLabel="Ajouter la contrepartie"
+              />
+            </View>
+          ) : (
+            <Text style={[textStyle('bodyMdMedium'), styles.cardTitle]}>
+              {`Contrepartie liée : ${formatAmount(counterpart?.amount ?? 0, { signed: true })}`}
+            </Text>
+          )}
+          <Text style={[textStyle('bodySm'), styles.note]}>
+            Un fantôme de sens opposé, sur le même compte et à la même date : une charge prélevée à la source n’est
+            pas comptée deux fois. Les deux écritures restent liées.
+          </Text>
+          {addCounterpart || linkedCounterpart ? (
+            <Chips
+              scroll
+              options={counterpartCategoryOptions}
+              value={counterpartCategoryId}
+              onChange={setCounterpartCategoryId}
+            />
+          ) : null}
+        </View>
       ) : null}
 
       {canSplit ? (
@@ -441,7 +551,9 @@ function OperationForm({
             <Text style={[textStyle('bodyMd'), styles.cardTitle]}>
               {isMovement
                 ? 'Supprimer ce mouvement ? Les deux écritures seront supprimées.'
-                : 'Supprimer cette opération ?'}
+                : linkedCounterpart
+                  ? 'Supprimer ce fantôme ? Sa contrepartie sera supprimée aussi.'
+                  : 'Supprimer cette opération ?'}
             </Text>
             <View style={styles.cardRow}>
               <Button label="Annuler" variant="secondary" onPress={() => setConfirmingDelete(false)} />
@@ -483,6 +595,10 @@ const styles = StyleSheet.create({
   },
   note: {
     color: colors.ash,
+  },
+  help: {
+    gap: spacing.xxs,
+    paddingTop: spacing.xxs,
   },
   card: {
     backgroundColor: colors.surface,

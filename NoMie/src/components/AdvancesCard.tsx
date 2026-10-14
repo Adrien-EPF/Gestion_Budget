@@ -16,7 +16,7 @@ export function AdvancesCard({ advances }: { advances: PendingAdvances }) {
           </View>
         </View>
         <Text style={[textStyle('bodySm'), styles.subtitle]}>
-          {`${advances.count} ${advances.count > 1 ? 'portions' : 'portion'} en attente de remboursement`}
+          {`${advances.count} ${advances.count > 1 ? 'avances' : 'avance'} en attente de remboursement`}
         </Text>
       </View>
       <Text testID="home-advances-total" style={[textStyle('amountLg'), styles.total]}>

@@ -47,6 +47,7 @@ export function TransactionRow({
         isFirst && styles.first,
         isLast && styles.last,
         pressed && styles.pressed,
+        status === 'fantome' && styles.ghost,
       ]}
     >
       <View style={[styles.icon, toPointTone && { backgroundColor: colors.statusNonPointeSoft }]}>
@@ -124,6 +125,10 @@ const styles = StyleSheet.create({
   },
   pressed: {
     backgroundColor: colors.canvas,
+  },
+  // A Fantôme is not a real bank flow: greyed so it is never mistaken for one.
+  ghost: {
+    opacity: 0.55,
   },
   icon: {
     width: 36,

@@ -3,6 +3,9 @@ import type { CategoryKind, CategorySystemRole } from '../services/dataService';
 /** Seed name of the category carrying the `virement` role, which makes the service write a transfer's mirror transaction (CONTEXT.md §7). The role, not this name, is what the service looks for. */
 export const TRANSFER_CATEGORY_NAME = 'Mouvement inter-compte';
 
+/** Seed name of the category a Fantôme's contrepartie lands in unless the user picks another. */
+export const COUNTERPART_DEFAULT_CATEGORY_NAME = 'Salaire/Intérêts/Avantages';
+
 export interface DefaultCategorySeed {
   name: string;
   kind: CategoryKind;
@@ -38,7 +41,7 @@ export const DEFAULT_CATEGORIES: DefaultCategorySeed[] = [
   { name: 'Retrait', kind: 'expense' },
   { name: 'Virement', kind: 'both' },
   { name: TRANSFER_CATEGORY_NAME, kind: 'both', systemRole: 'virement' },
-  { name: 'Salaire/Intérêts/Avantages', kind: 'income' },
+  { name: COUNTERPART_DEFAULT_CATEGORY_NAME, kind: 'income' },
   { name: 'Chèque', kind: 'both' },
   { name: 'Avancé', kind: 'both', systemRole: 'avance' },
   { name: 'Aide Etat', kind: 'income' },

@@ -12,7 +12,7 @@ import {
   type BackupTransactionRow,
 } from '../backup/backupFormat';
 import { buildCsv, csvBool, formatCsvAmount } from '../backup/csv';
-import { DEFAULT_CATEGORIES, TRANSFER_CATEGORY_NAME } from '../data/defaultCategories';
+import { COUNTERPART_DEFAULT_CATEGORY_NAME, DEFAULT_CATEGORIES, TRANSFER_CATEGORY_NAME } from '../data/defaultCategories';
 import { COLUMN_MIGRATIONS, SCHEMA_SQL } from '../db/schema';
 import type { SqlDatabase } from '../db/types';
 import { toIsoDate } from '../utils/dates';
@@ -58,9 +58,23 @@ export interface CategoryChanges {
   hidden?: boolean;
 }
 
-/** One portion marked Avancé, still waiting to be paid back, as the dedicated screen lists it. */
+/** What an advance to pay back is: a portion of an operation, or an operation in the Avancé category. */
+export type AdvanceRef = { splitId: number } | { transactionId: number };
+
+/** What the user can change in the Remboursé sheet; each defaults to the advance's own value. */
+export interface ReimbursementOptions {
+  accountId?: number;
+  /** ISO date; today by default. */
+  date?: string;
+  /** Strictly positive; the advanced amount by default. */
+  amount?: number;
+}
+
+/** One advance (a portion or a whole operation) still waiting to be paid back, as the dedicated screen lists it. */
 export interface PendingAdvance {
-  splitId: number;
+  ref: AdvanceRef;
+  /** Account the advance was paid from, which the reimbursement sheet proposes. */
+  accountId: number;
   accountName: string;
   categoryName: string | null;
   /** Absolute value — an advance is always shown as a positive amount owed. */
@@ -172,6 +186,12 @@ export interface NewTransaction {
   offBalance?: boolean;
   /** For an operation in the Avancé category; defaults to `en_attente`. */
   advanceType?: AdvanceType;
+  /**
+   * Fantôme only: also creates its contrepartie, a linked Fantôme of opposite sign on the same
+   * account and date (so a charge withheld at source is not counted twice). Its category defaults
+   * to Salaire/Intérêts/Avantages. Given on an edit, it adds one to a Fantôme that has none.
+   */
+  counterpart?: { categoryId?: number | null };
   /**
    * Répartition over several categories. The portions must add up to
    * `amount` (or to 100 %) — checked before anything is written.
@@ -962,6 +982,13 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
   const getTransferCategoryId = () => getSystemCategoryId('virement');
 
+  async function getDefaultCounterpartCategoryId(): Promise<number | null> {
+    const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM categories WHERE name = ?', [
+      COUNTERPART_DEFAULT_CATEGORY_NAME,
+    ]);
+    return row?.id ?? null;
+  }
+
   /**
    * Every rule about what a transaction may look like, checked before the
    * first row is written — shared by creation and editing.
@@ -971,7 +998,11 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     const transferCategoryId = await getTransferCategoryId();
     const splits = resolveSplits(input.amount, input.splits ?? [], advanceCategoryId);
     const isTransfer = input.categoryId != null && input.categoryId === transferCategoryId;
-    const isAdvance = input.categoryId != null && input.categoryId === advanceCategoryId;
+    // A split operation's own category is its first portion's, so only a whole operation is in Avancé.
+    const inAdvanceCategory =
+      splits.length === 0 && input.categoryId != null && input.categoryId === advanceCategoryId;
+    // Money paid back in the Avancé category is the reimbursement, not an advance to wait for.
+    const isAdvance = inAdvanceCategory && input.amount < 0;
     const status = input.status ?? 'non_pointe';
 
     if (isTransfer) {
@@ -995,9 +1026,12 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     }
 
     // Avancé and inter-account movements are always out of the bilan; elsewhere the box is free.
-    const offBalance = isTransfer || isAdvance || (input.offBalance ?? false);
+    const offBalance = isTransfer || inAdvanceCategory || (input.offBalance ?? false);
     if (status === 'fantome' && offBalance) {
       throw new Error('A Fantôme cannot be Hors bilan: it would count nowhere.');
+    }
+    if (input.counterpart && status !== 'fantome') {
+      throw new Error('Only a Fantôme can have a contrepartie.');
     }
     const importance = input.amount < 0 && !offBalance ? (input.importance ?? 'essentiel') : null;
 
@@ -1021,8 +1055,39 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
+   * Writes the contrepartie of the Fantôme `id` and links the two. Runs inside the
+   * caller's atomic write.
+   */
+  async function insertCounterpart(
+    id: number,
+    fields: { accountId: number; operationDate: string; bankDate: string | null; comment: string; amount: number },
+    categoryId: number | null | undefined
+  ): Promise<number> {
+    const amount = -fields.amount;
+    const counterpartId = (
+      await db.runAsync(
+        `INSERT INTO transactions
+           (account_id, operation_date, bank_date, comment, amount, category_id, status, importance, off_balance)
+         VALUES (?, ?, ?, ?, ?, ?, 'fantome', ?, 0)`,
+        [
+          fields.accountId,
+          fields.operationDate,
+          fields.bankDate,
+          fields.comment,
+          amount,
+          categoryId === undefined ? await getDefaultCounterpartCategoryId() : categoryId,
+          amount < 0 ? 'essentiel' : null,
+        ]
+      )
+    ).lastInsertRowId;
+    await db.runAsync('UPDATE transactions SET counterpart_transaction_id = ? WHERE id = ?', [counterpartId, id]);
+    await db.runAsync('UPDATE transactions SET counterpart_transaction_id = ? WHERE id = ?', [id, counterpartId]);
+    return counterpartId;
+  }
+
+  /**
    * The rows themselves (the transaction, its portions, a transfer's
-   * mirror) land in one atomic write.
+   * mirror, a Fantôme's contrepartie) land in one atomic write.
    */
   async function createTransaction(input: NewTransaction): Promise<Transaction> {
     const { fields, splits, isTransfer } = await prepareTransaction(input);
@@ -1051,6 +1116,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
     let id = 0;
     let mirrorTransactionId: number | null = null;
+    let counterpartTransactionId: number | null = null;
     await db.transactionAsync(async () => {
       id = await insert(fields);
       for (const line of splits) {
@@ -1075,6 +1141,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           mirrorTransactionId,
         ]);
       }
+      if (input.counterpart) {
+        counterpartTransactionId = await insertCounterpart(id, fields, input.counterpart.categoryId);
+      }
     });
     notifyChange();
     return {
@@ -1082,7 +1151,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       ...fields,
       mirrorTransactionId,
       recurrenceRuleId: null,
-      counterpartTransactionId: null,
+      counterpartTransactionId,
       reimbursedById: null,
       splits,
     };
@@ -1105,6 +1174,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
     // The box is only the user's choice outside Avancé and movements, where it is forced on.
     const forcedOffBalance =
+      existing.splits.length === 0 &&
       existing.categoryId !== null &&
       (existing.categoryId === advanceCategoryId || existing.categoryId === transferCategoryId);
 
@@ -1127,11 +1197,16 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           advanceType: s.advanceType ?? undefined,
         })),
       transferToAccountId: changes.transferToAccountId ?? mirror?.accountId,
+      counterpart: changes.counterpart,
     };
 
     const { fields, splits, isTransfer } = await prepareTransaction(input);
     if (isTransfer !== (mirror !== null)) {
       throw new Error('An inter-account movement cannot be turned into a plain operation, or the reverse.');
+    }
+    const counterpartId = existing.counterpartTransactionId;
+    if (counterpartId !== null && fields.status !== 'fantome') {
+      throw new Error('A Fantôme with a contrepartie has to stay a Fantôme.');
     }
 
     await db.transactionAsync(async () => {
@@ -1172,19 +1247,37 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           ]
         );
       }
+      if (counterpartId !== null) {
+        // Amount and date follow; the other side keeps its own category, account and label.
+        await db.runAsync('UPDATE transactions SET operation_date = ?, amount = ? WHERE id = ?', [
+          fields.operationDate,
+          -fields.amount,
+          counterpartId,
+        ]);
+        if (changes.counterpart?.categoryId !== undefined) {
+          await db.runAsync('UPDATE transactions SET category_id = ? WHERE id = ?', [
+            changes.counterpart.categoryId,
+            counterpartId,
+          ]);
+        }
+      } else if (changes.counterpart) {
+        await insertCounterpart(id, fields, changes.counterpart.categoryId);
+      }
     });
     notifyChange();
   }
 
   /**
-   * Deletes a transaction, its portions and, for an inter-account movement,
-   * the other leg. An advance paid back by a deleted income goes back to
+   * Deletes a transaction, its portions and, for an inter-account movement
+   * or a Fantôme with a contrepartie, the other leg. An advance paid back by a deleted income goes back to
    * the pending list.
    */
   async function deleteTransaction(id: number): Promise<void> {
     const existing = await getTransaction(id);
     if (!existing) return;
-    const ids = existing.mirrorTransactionId === null ? [id] : [id, existing.mirrorTransactionId];
+    const ids = [id, existing.mirrorTransactionId, existing.counterpartTransactionId].filter(
+      (other): other is number => other !== null
+    );
     await db.transactionAsync(async () => {
       for (const gone of ids) {
         await db.runAsync('DELETE FROM transaction_splits WHERE transaction_id = ?', [gone]);
@@ -1525,46 +1618,46 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       });
   }
 
-  /**
-   * Advanced portions waiting to be paid back, over active accounts.
-   * Reimbursed portions (`reimbursed_by_id` set) drop out as soon as
-   * they're marked, here and on the dedicated Avances en attente screen.
-   */
+  /** Advances waiting to be paid back: expenses and portions in Avancé, `en_attente`, not yet reimbursed. */
+  const PENDING_ADVANCES = `
+    SELECT s.id AS split_id, NULL AS transaction_id, t.id AS parent_id, t.account_id AS account_id,
+      a.name AS account_name, c.name AS category_name, ABS(s.amount) AS amount,
+      t.operation_date AS operation_date
+    FROM transaction_splits s
+    JOIN categories c ON c.id = s.category_id AND c.system_role = 'avance'
+    JOIN transactions t ON t.id = s.transaction_id
+    JOIN accounts a ON a.id = t.account_id
+    WHERE a.archived = 0 AND s.advance_type = 'en_attente' AND s.reimbursed_by_id IS NULL
+    UNION ALL
+    SELECT NULL, t.id, t.id, t.account_id, a.name, c.name, ABS(t.amount), t.operation_date
+    FROM transactions t
+    JOIN categories c ON c.id = t.category_id AND c.system_role = 'avance'
+    JOIN accounts a ON a.id = t.account_id
+    WHERE a.archived = 0 AND t.amount < 0 AND t.advance_type = 'en_attente' AND t.reimbursed_by_id IS NULL
+      AND NOT EXISTS (SELECT 1 FROM transaction_splits x WHERE x.transaction_id = t.id)`;
+
+  /** Count and total of `listPendingAdvances`, for Accueil's card and the pending badge. */
   async function getPendingAdvances(): Promise<PendingAdvances> {
     const row = await db.getFirstAsync<{ count: number; total: number | null }>(
-      `SELECT COUNT(*) AS count, SUM(ABS(s.amount)) AS total
-       FROM transaction_splits s
-       JOIN categories sc ON sc.id = s.category_id
-       JOIN transactions t ON t.id = s.transaction_id
-       JOIN accounts a ON a.id = t.account_id
-       WHERE a.archived = 0 AND sc.system_role = 'avance' AND s.advance_type = 'en_attente'
-         AND s.reimbursed_by_id IS NULL`
+      `SELECT COUNT(*) AS count, SUM(amount) AS total FROM (${PENDING_ADVANCES})`
     );
     return { count: row?.count ?? 0, total: roundToCents(row?.total ?? 0) };
   }
 
-  /** Every portion behind `getPendingAdvances`'s total, detailed for the Avances en attente screen (#21). */
+  /** Every advance behind `getPendingAdvances`'s total, detailed for the Avances en attente screen. */
   async function listPendingAdvances(): Promise<PendingAdvance[]> {
     const rows = await db.getAllAsync<{
-      split_id: number;
+      split_id: number | null;
+      transaction_id: number | null;
+      account_id: number;
       account_name: string;
       category_name: string | null;
       amount: number;
       operation_date: string;
-    }>(
-      `SELECT s.id AS split_id, a.name AS account_name, c.name AS category_name,
-         ABS(s.amount) AS amount, t.operation_date AS operation_date
-       FROM transaction_splits s
-       JOIN categories sc ON sc.id = s.category_id
-       JOIN transactions t ON t.id = s.transaction_id
-       JOIN accounts a ON a.id = t.account_id
-       LEFT JOIN categories c ON c.id = s.category_id
-       WHERE a.archived = 0 AND sc.system_role = 'avance' AND s.advance_type = 'en_attente'
-         AND s.reimbursed_by_id IS NULL
-       ORDER BY t.operation_date DESC, s.id DESC`
-    );
+    }>(`SELECT * FROM (${PENDING_ADVANCES}) ORDER BY operation_date DESC, parent_id DESC, split_id DESC`);
     return rows.map((row) => ({
-      splitId: row.split_id,
+      ref: row.split_id !== null ? { splitId: row.split_id } : { transactionId: row.transaction_id as number },
+      accountId: row.account_id,
       accountName: row.account_name,
       categoryName: row.category_name,
       amount: roundToCents(row.amount),
@@ -1573,29 +1666,44 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Pays one portion back: records the income received (same account, today, the
-   * advanced amount), out of the bilan, and links the portion to it so it leaves the
-   * pending list for good. The reimbursement sheet with editable fields is a later ticket.
+   * Pays an advance back: records the income received (the advance's account, today
+   * and its amount unless the user chose otherwise) in the Avancé category, out of the
+   * bilan and Non pointé, and links the advance to it so it leaves the pending list.
+   * No partial payment: the advance is settled whatever the amount received.
    */
-  async function markAdvanceReimbursed(splitId: number): Promise<void> {
-    const split = await db.getFirstAsync<{ amount: number; account_id: number; category_id: number | null }>(
-      `SELECT s.amount, t.account_id, s.category_id
-       FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
-       WHERE s.id = ? AND s.reimbursed_by_id IS NULL`,
-      [splitId]
-    );
-    if (!split) return;
+  async function markAdvanceReimbursed(ref: AdvanceRef, options: ReimbursementOptions = {}): Promise<void> {
+    const advance =
+      'splitId' in ref
+        ? await db.getFirstAsync<{ amount: number; account_id: number }>(
+            `SELECT s.amount, t.account_id
+             FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
+             WHERE s.id = ? AND s.reimbursed_by_id IS NULL`,
+            [ref.splitId]
+          )
+        : await db.getFirstAsync<{ amount: number; account_id: number }>(
+            'SELECT amount, account_id FROM transactions WHERE id = ? AND reimbursed_by_id IS NULL',
+            [ref.transactionId]
+          );
+    if (!advance) return;
+    const amount = options.amount ?? Math.abs(advance.amount);
+    if (!(amount > 0)) throw new Error('A reimbursement must be greater than zero.');
+    const accountId = options.accountId ?? advance.account_id;
+    if (!(await getAccount(accountId))) throw new Error(`Account ${accountId} does not exist.`);
+    const advanceCategoryId = await getSystemCategoryId('avance');
+
     await db.transactionAsync(async () => {
       const received = await db.runAsync(
         `INSERT INTO transactions
            (account_id, operation_date, bank_date, comment, amount, category_id, status, off_balance)
          VALUES (?, ?, NULL, 'Remboursement', ?, ?, 'non_pointe', 1)`,
-        [split.account_id, today(), Math.abs(split.amount), split.category_id]
+        [accountId, options.date ?? today(), roundToCents(amount), advanceCategoryId]
       );
-      await db.runAsync('UPDATE transaction_splits SET reimbursed_by_id = ? WHERE id = ?', [
-        received.lastInsertRowId,
-        splitId,
-      ]);
+      await db.runAsync(
+        'splitId' in ref
+          ? 'UPDATE transaction_splits SET reimbursed_by_id = ? WHERE id = ?'
+          : 'UPDATE transactions SET reimbursed_by_id = ? WHERE id = ?',
+        [received.lastInsertRowId, 'splitId' in ref ? ref.splitId : ref.transactionId]
+      );
     });
     notifyChange();
   }

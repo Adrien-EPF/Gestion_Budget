@@ -188,7 +188,7 @@ describe('dataService — editing and deleting a transaction', () => {
       ],
     });
     const [pending] = await dataService.listPendingAdvances();
-    await dataService.markAdvanceReimbursed(pending.splitId);
+    await dataService.markAdvanceReimbursed(pending.ref);
     expect(await dataService.listPendingAdvances()).toHaveLength(0);
 
     const [income] = (

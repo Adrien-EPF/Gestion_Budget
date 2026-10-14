@@ -247,4 +247,158 @@ describe('Écran Opération', () => {
       expect((await app.dataService.getTransaction(edited.id))!.splits).toEqual([]);
     });
   });
+  describe('avances et Hors bilan (#45)', () => {
+    const openNew = async (amount: string) => {
+      await press(screen.getAllByLabelText('Nouvelle opération')[0]);
+      await press(screen.getByText('Plus d’options'));
+      await typeInto(screenScope().getByLabelText('Montant'), amount);
+    };
+
+    it('leaves Hors bilan free on an ordinary operation, and saves it', async () => {
+      await openNew('60');
+      await press(screenScope().getByLabelText('Restaurant'));
+      expect(screenScope().getByLabelText('Hors bilan')).toBeEnabled();
+      expect(screenScope().getByLabelText('Hors bilan')).not.toBeChecked();
+
+      await press(screenScope().getByLabelText('Hors bilan'));
+      await press(screenScope().getByText('Enregistrer'));
+
+      const [created] = await operations();
+      expect(created).toMatchObject({ offBalance: true, importance: null });
+    });
+
+    it('checks and locks Hors bilan on Avancé, asking whether it is settled elsewhere or waiting', async () => {
+      await openNew('64');
+      await press(screenScope().getByLabelText('Avancé'));
+
+      expect(screenScope().getByLabelText('Hors bilan')).toBeChecked();
+      expect(screenScope().getByLabelText('Hors bilan')).toBeDisabled();
+      expect(screenScope().getByLabelText('Réglée ailleurs')).toBeTruthy();
+
+      await press(screenScope().getByLabelText('En attente'));
+      await typeInto(screenScope().getByLabelText('Libellé'), 'Billet de train');
+      await press(screenScope().getByText('Enregistrer'));
+
+      const [created] = await operations();
+      expect(created).toMatchObject({ offBalance: true, advanceType: 'en_attente', amount: -64 });
+      expect(await app.dataService.getPendingAdvances()).toEqual({ count: 1, total: 64 });
+    });
+
+    it('checks and locks Hors bilan on a movement between accounts', async () => {
+      await openNew('200');
+      await press(screenScope().getByLabelText('Mouvement inter-compte'));
+
+      expect(screenScope().getByLabelText('Hors bilan')).toBeChecked();
+      expect(screenScope().getByLabelText('Hors bilan')).toBeDisabled();
+    });
+
+    it('does not turn an operation split with an Avancé first portion into an advance when edited', async () => {
+      const [restaurant, avance] = [await category('Restaurant'), await category('Avancé')];
+      await add({
+        operationDate: today,
+        amount: -50,
+        comment: 'Resto à plusieurs',
+        splits: [
+          { categoryId: avance.id, amount: -30, advanceType: 'reglee_ailleurs' },
+          { categoryId: restaurant.id, amount: -20 },
+        ],
+      });
+      await press(screen.getByLabelText('Resto à plusieurs, Non pointé'));
+      expect(screenScope().getByLabelText('Hors bilan')).not.toBeChecked();
+      await press(screenScope().getByText('Enregistrer'));
+
+      const [edited] = await operations();
+      expect(edited.offBalance).toBe(false);
+      expect(edited.advanceType).toBeNull();
+    });
+  });
+
+  describe('fantôme et contrepartie (#46)', () => {
+    const openNewFantome = async (amount: string) => {
+      await press(screen.getAllByLabelText('Nouvelle opération')[0]);
+      await press(screen.getByText('Plus d’options'));
+      await typeInto(screenScope().getByLabelText('Montant'), amount);
+      await press(screenScope().getByLabelText('Fantôme'));
+    };
+
+    it('explains tickets resto and expenses paid by someone else', async () => {
+      await openNewFantome('10');
+
+      expect(screenScope().getByText(/Tickets resto/)).toBeTruthy();
+      expect(screenScope().getByText(/payée par quelqu’un d’autre/)).toBeTruthy();
+    });
+
+    it('offers the counterpart by default on Impôts and creates the linked pair', async () => {
+      await openNewFantome('250');
+      await press(screenScope().getByLabelText('Impôts'));
+      expect(screenScope().getByLabelText('Ajouter la contrepartie')).toBeChecked();
+      expect(screenScope().getByLabelText('Hors bilan')).toBeDisabled();
+      expect(screenScope().getByLabelText('Hors bilan')).not.toBeChecked();
+
+      await press(screenScope().getByText('Enregistrer'));
+
+      const pair = await operations();
+      expect(pair).toHaveLength(2);
+      const expense = pair.find((o) => o.amount < 0)!;
+      const income = pair.find((o) => o.amount > 0)!;
+      expect(expense).toMatchObject({ amount: -250, status: 'fantome', categoryName: 'Impôts' });
+      expect(income).toMatchObject({
+        amount: 250,
+        status: 'fantome',
+        categoryName: 'Salaire/Intérêts/Avantages',
+        counterpartTransactionId: expense.id,
+      });
+    });
+
+    it('is off by default outside Impôts, and stays optional', async () => {
+      await openNewFantome('40');
+      await press(screenScope().getByLabelText('Cadeaux'));
+      expect(screenScope().getByLabelText('Ajouter la contrepartie')).not.toBeChecked();
+
+      await press(screenScope().getByText('Enregistrer'));
+      expect(await operations()).toHaveLength(1);
+    });
+
+    it('lets the user turn the counterpart off on Impôts', async () => {
+      await openNewFantome('250');
+      await press(screenScope().getByLabelText('Impôts'));
+      await press(screenScope().getByLabelText('Ajouter la contrepartie'));
+      await press(screenScope().getByText('Enregistrer'));
+      expect(await operations()).toHaveLength(1);
+    });
+
+    it('shows the linked counterpart when editing, keeps both in step and deletes both after confirmation', async () => {
+      const impots = await category('Impôts');
+      const tax = await add({
+        operationDate: today,
+        amount: -250,
+        comment: 'Impôt à la source',
+        categoryId: impots.id,
+        status: 'fantome',
+        counterpart: {},
+      });
+      expect(tax.counterpartTransactionId).not.toBeNull();
+
+      await press(screen.getAllByLabelText('Impôt à la source, Fantôme')[0]);
+      expect(screenScope().getByText(/Contrepartie liée/)).toBeTruthy();
+      await typeInto(screenScope().getByLabelText('Montant'), '300');
+      await press(screenScope().getByText('Enregistrer'));
+      expect((await operations()).map((o) => o.amount).sort((a, b) => a - b)).toEqual([-300, 300]);
+
+      await press(screen.getAllByLabelText('Impôt à la source, Fantôme')[0]);
+      await press(screenScope().getByText('Supprimer'));
+      expect(screenScope().getByText(/contrepartie sera supprimée aussi/)).toBeTruthy();
+      expect(await operations()).toHaveLength(2);
+      await press(screenScope().getByText('Confirmer la suppression'));
+      expect(await operations()).toHaveLength(0);
+    });
+
+    it('never offers a Fantôme for pointage', async () => {
+      await add({ operationDate: today, amount: -40, comment: 'Offert', status: 'fantome' });
+
+      expect(screen.getByLabelText('Offert, Fantôme')).toBeTruthy();
+      expect(screen.queryByLabelText('Pointer Offert')).toBeNull();
+      expect(await app.dataService.listTransactionsToPoint()).toEqual([]);
+    });
+  });
 });

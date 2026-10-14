@@ -318,14 +318,16 @@ describe('dataService — split, inter-account movements, advances', () => {
         const pending = await dataService.listPendingAdvances();
         expect(pending).toEqual([
           {
-            splitId: expect.any(Number),
+            ref: { splitId: expect.any(Number) },
+            accountId: expect.any(Number),
             accountName: 'Compte courant',
             categoryName: 'Avancé',
             amount: 10,
             operationDate: '2026-09-11',
           },
           {
-            splitId: expect.any(Number),
+            ref: { splitId: expect.any(Number) },
+            accountId: expect.any(Number),
             accountName: 'Livret A',
             categoryName: 'Avancé',
             amount: 20,
@@ -339,11 +341,11 @@ describe('dataService — split, inter-account movements, advances', () => {
         await advance(livret, 20);
         const [first] = await dataService.listPendingAdvances();
 
-        await dataService.markAdvanceReimbursed(first.splitId);
+        await dataService.markAdvanceReimbursed(first.ref);
 
         const pending = await dataService.listPendingAdvances();
         expect(pending).toHaveLength(1);
-        expect(pending.find((p) => p.splitId === first.splitId)).toBeUndefined();
+        expect(pending.find((p) => JSON.stringify(p.ref) === JSON.stringify(first.ref))).toBeUndefined();
         expect(await dataService.getPendingAdvances()).toEqual({ count: 1, total: 30 - first.amount });
       });
 
@@ -356,10 +358,10 @@ describe('dataService — split, inter-account movements, advances', () => {
         });
         const [first, second] = await dataService.listPendingAdvances();
 
-        await dataService.markAdvanceReimbursed(first.splitId);
+        await dataService.markAdvanceReimbursed(first.ref);
 
         const pending = await dataService.listPendingAdvances();
-        expect(pending).toEqual([expect.objectContaining({ splitId: second.splitId })]);
+        expect(pending).toEqual([expect.objectContaining({ ref: second.ref })]);
       });
 
       it('notifies subscribers so Accueil and the pending total refresh', async () => {
@@ -368,7 +370,7 @@ describe('dataService — split, inter-account movements, advances', () => {
         const listener = jest.fn();
         dataService.subscribe(listener);
 
-        await dataService.markAdvanceReimbursed(pending.splitId);
+        await dataService.markAdvanceReimbursed(pending.ref);
 
         expect(listener).toHaveBeenCalled();
       });

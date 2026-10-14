@@ -121,7 +121,7 @@ describe('dataService — sauvegarde (createBackup / restoreBackup)', () => {
     await seed(dataService);
     const [pending] = await dataService.listPendingAdvances();
     expect(pending).toBeDefined();
-    await dataService.markAdvanceReimbursed(pending.splitId);
+    await dataService.markAdvanceReimbursed(pending.ref);
     expect(await dataService.getPendingAdvances()).toEqual({ count: 0, total: 0 });
 
     const backup = await dataService.createBackup();

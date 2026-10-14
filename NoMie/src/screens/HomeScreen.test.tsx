@@ -195,19 +195,19 @@ describe('Écran Accueil', () => {
       expect(screen.queryByText('Avances')).toBeNull();
     });
 
-    it('summarises what waits to be paid back: title, badge, portions and total', async () => {
+    it('summarises what waits to be paid back: title, badge, advances and total', async () => {
       await addAdvance(14.25, 'Le Comptoir');
       await addAdvance(50, 'Week-end');
 
       expect(screen.getByText('Avances')).toBeTruthy();
-      expect(screen.getByText('2 portions en attente de remboursement')).toBeTruthy();
+      expect(screen.getByText('2 avances en attente de remboursement')).toBeTruthy();
       expect(screen.getByTestId('home-advances-total').props.children).toBe(formatAmount(64.25));
       expect(screen.getByText('Avancé')).toBeTruthy(); // the badge
     });
 
-    it('speaks of a single portion in the singular', async () => {
+    it('speaks of a single advance in the singular', async () => {
       await addAdvance(10);
-      expect(screen.getByText('1 portion en attente de remboursement')).toBeTruthy();
+      expect(screen.getByText('1 avance en attente de remboursement')).toBeTruthy();
     });
 
     it('marks a transaction row with the advanced amount, and only that one', async () => {
