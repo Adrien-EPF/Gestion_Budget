@@ -268,8 +268,9 @@ function OperationForm({
         await dataService.createTransaction(values);
       }
       onClose();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Enregistrement impossible.');
+    } catch {
+      // The service's rules are in English and meant for developers; the form already guards the usual cases.
+      setError('Enregistrement impossible : un fantôme ne peut pas être hors bilan, ni un mouvement entre comptes être un fantôme.');
     }
   };
 
