@@ -8,7 +8,10 @@ import { STATUS_LABELS, StatusPill } from './StatusPill';
 
 interface TransactionRowProps {
   transaction: TransactionListItem;
+  /** Opens the operation. */
   onPress?: () => void;
+  /** A tap on the status pill: Non pointé ⇄ Pointé. Prévision and Fantôme never toggle. */
+  onTogglePointage?: () => void;
   /** Tints the category icon as an item awaiting pointage (Comptes › À pointer). */
   toPointTone?: boolean;
   /** Rounds the corners of the first / last row so a stack of rows reads as one card. */
@@ -20,6 +23,7 @@ interface TransactionRowProps {
 export function TransactionRow({
   transaction,
   onPress,
+  onTogglePointage,
   toPointTone = false,
   isFirst = false,
   isLast = false,
@@ -61,7 +65,18 @@ export function TransactionRow({
           {label}
         </Text>
         <View style={styles.meta}>
-          <StatusPill status={status} />
+          {onTogglePointage && (status === 'non_pointe' || status === 'pointe') ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`${status === 'non_pointe' ? 'Pointer' : 'Dépointer'} ${label}`}
+              onPress={onTogglePointage}
+              hitSlop={8}
+            >
+              <StatusPill status={status} />
+            </Pressable>
+          ) : (
+            <StatusPill status={status} />
+          )}
           <Text style={[textStyle('bodySm'), styles.metaText]} numberOfLines={1}>
             {meta}
           </Text>

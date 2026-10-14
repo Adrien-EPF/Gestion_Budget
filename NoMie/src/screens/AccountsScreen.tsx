@@ -6,6 +6,7 @@ import { Screen } from '../components/Screen';
 import { TransactionRow } from '../components/TransactionRow';
 import type { Account, AccountSummary, TransactionListItem } from '../services/dataService';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
+import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatLongDate, toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
@@ -14,6 +15,7 @@ import type { TabScreenProps } from '../navigation/types';
 /** Comptes (handoff §6.2): balances, one card per account, and the pointage queue. */
 export function AccountsScreen({ route }: TabScreenProps<'Comptes'>) {
   const dataService = useDataService();
+  const editor = useOperationEditor();
   const now = dataService.now();
   const [year, month] = [now.getFullYear(), now.getMonth()];
 
@@ -147,7 +149,8 @@ export function AccountsScreen({ route }: TabScreenProps<'Comptes'>) {
               toPointTone
               isFirst={index === 0}
               isLast={index === rows.length - 1}
-              onPress={() => dataService.setPointed(item.id, true)}
+              onPress={() => editor.open({ kind: 'edit', id: item.id })}
+              onTogglePointage={() => dataService.setPointed(item.id, true)}
             />
           </View>
         )}

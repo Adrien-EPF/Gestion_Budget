@@ -121,14 +121,14 @@ describe('Écran Accueil', () => {
         `Pointé ${formatAmount(1000)}`
       );
 
-      await press(screen.getByLabelText('Essence, Non pointé'));
+      await press(screen.getByLabelText('Pointer Essence'));
       expect(screen.getByLabelText('Essence, Pointé')).toBeTruthy();
       expect(screen.getByTestId('home-total-pointed').props.children).toBe(
         `Pointé ${formatAmount(900)}`
       );
       expect(screen.getByText('Tout est pointé')).toBeTruthy();
 
-      await press(screen.getByLabelText('Essence, Pointé'));
+      await press(screen.getByLabelText('Dépointer Essence'));
       expect(screen.getByLabelText('Essence, Non pointé')).toBeTruthy();
       expect(screen.getByTestId('home-total-pointed').props.children).toBe(
         `Pointé ${formatAmount(1000)}`
@@ -222,7 +222,7 @@ describe('Écran Accueil', () => {
 
     it('does not change how the row is pointed: the whole transaction is toggled', async () => {
       await addAdvance(14.25, 'Le Comptoir');
-      await press(screen.getByLabelText('Le Comptoir, Non pointé'));
+      await press(screen.getByLabelText('Pointer Le Comptoir'));
       expect(screen.getByLabelText('Le Comptoir, Pointé')).toBeTruthy();
       expect(screen.getByTestId('home-total-pointed').props.children).toBe(
         `Pointé ${formatAmount(1000 - 28.5)}`

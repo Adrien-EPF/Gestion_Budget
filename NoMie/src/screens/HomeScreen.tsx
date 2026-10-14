@@ -10,6 +10,7 @@ import { useMonth } from '../navigation/MonthContext';
 import type { TabScreenProps } from '../navigation/types';
 import type { MonthSummary } from '../services/dataService';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
+import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { dayOfMonth } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
@@ -20,6 +21,7 @@ const BUDGET_PREVIEW_COUNT = 3;
 /** Accueil (handoff §6.1). */
 export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const dataService = useDataService();
+  const editor = useOperationEditor();
   const { year, month } = useMonth();
   const [yearReportOpen, setYearReportOpen] = useState(false);
 
@@ -191,12 +193,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
               transaction={item}
               isFirst={index === 0}
               isLast={index === transactions.length - 1}
-              onPress={() => {
-                // Prévision and Flux comptable never change by tap (handoff §7).
-                if (item.status === 'non_pointe' || item.status === 'pointe') {
-                  dataService.setPointed(item.id, item.status === 'non_pointe');
-                }
-              }}
+              onPress={() => editor.open({ kind: 'edit', id: item.id })}
+              onTogglePointage={() => dataService.setPointed(item.id, item.status === 'non_pointe')}
             />
           </View>
         )}

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
 import { applyKey, parseAmountText, type KeypadKey } from '../utils/amountInput';
@@ -36,6 +37,7 @@ export function QuickEntrySheet({ visible, onClose }: QuickEntrySheetProps) {
 
 function QuickEntryForm({ onClose }: { onClose: () => void }) {
   const dataService = useDataService();
+  const editor = useOperationEditor();
   const categories = useServiceQuery((s) => s.listCategories());
   const currentAccount = useServiceQuery((s) => s.getCurrentAccount());
 
@@ -69,6 +71,12 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
       amount: isExpense ? -value : value,
       categoryId,
     });
+    onClose();
+  };
+
+  const openFullScreen = () => {
+    const value = parseAmountText(amountText);
+    editor.open({ kind: 'new', draft: { amount: value > 0 ? value : undefined, isExpense, categoryId } });
     onClose();
   };
 
@@ -149,6 +157,8 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
         })}
       </ScrollView>
 
+      <Button label="Plus d’options" variant="ghost" onPress={openFullScreen} style={styles.moreOptions} />
+
       <View style={styles.actions}>
         <Button label="Annuler" variant="secondary" onPress={onClose} />
         <Button
@@ -162,7 +172,7 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
       <Text style={[textStyle('bodySm'), styles.hint]}>
         {noAccountYet
           ? 'Crée d’abord un compte dans l’onglet Comptes pour enregistrer une opération.'
-          : 'Tu peux répartir le montant sur plusieurs catégories après l’enregistrement.'}
+          : '« Plus d’options » ouvre l’écran complet : compte, dates, statut, répartition.'}
       </Text>
     </View>
   );
@@ -243,6 +253,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.xs,
     marginTop: spacing.md,
+  },
+  moreOptions: {
+    marginTop: spacing.xs,
   },
   saveButton: {
     flex: 1,

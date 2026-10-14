@@ -11,6 +11,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { RecurrencesScreen } from '../screens/RecurrencesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { MonthProvider } from './MonthContext';
+import { OperationEditorProvider } from './OperationEditorContext';
 import type { TabParamList } from './types';
 
 const Tab = createBottomTabNavigator<TabParamList>();
@@ -41,6 +42,7 @@ export function RootNavigator() {
 
   return (
     <MonthProvider>
+      <OperationEditorProvider>
       <SimulatedDateBanner />
       <NavigationContainer
         ref={navigationRef}
@@ -60,6 +62,7 @@ export function RootNavigator() {
           <Tab.Screen name="Réglages" component={SettingsScreen} />
         </Tab.Navigator>
       </NavigationContainer>
+      </OperationEditorProvider>
     </MonthProvider>
   );
 }

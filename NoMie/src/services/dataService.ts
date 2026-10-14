@@ -963,11 +963,10 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   const getTransferCategoryId = () => getSystemCategoryId('virement');
 
   /**
-   * Every rule about what a transaction may look like is checked here,
-   * before the first row is written; the rows themselves (the transaction,
-   * its portions, a transfer's mirror) land in one atomic write.
+   * Every rule about what a transaction may look like, checked before the
+   * first row is written — shared by creation and editing.
    */
-  async function createTransaction(input: NewTransaction): Promise<Transaction> {
+  async function prepareTransaction(input: NewTransaction) {
     const advanceCategoryId = await getSystemCategoryId('avance');
     const transferCategoryId = await getTransferCategoryId();
     const splits = resolveSplits(input.amount, input.splits ?? [], advanceCategoryId);
@@ -1017,6 +1016,16 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       offBalance,
       advanceType: isAdvance ? (input.advanceType ?? 'en_attente') : null,
     };
+
+    return { fields, splits, isTransfer };
+  }
+
+  /**
+   * The rows themselves (the transaction, its portions, a transfer's
+   * mirror) land in one atomic write.
+   */
+  async function createTransaction(input: NewTransaction): Promise<Transaction> {
+    const { fields, splits, isTransfer } = await prepareTransaction(input);
 
     const insert = async (values: typeof fields) =>
       (
@@ -1077,6 +1086,118 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       reimbursedById: null,
       splits,
     };
+  }
+
+  /**
+   * Edits a transaction. What `changes` leaves out stays as it was, then the
+   * result goes through the same rules as a creation. An inter-account
+   * movement is edited as a pair: the other leg follows (opposite amount,
+   * same date and comment) and the movement can't turn into a plain
+   * operation, nor the reverse.
+   */
+  async function updateTransaction(id: number, changes: Partial<NewTransaction>): Promise<void> {
+    const existing = await getTransaction(id);
+    if (!existing) throw new Error(`Transaction ${id} does not exist.`);
+    const mirror =
+      existing.mirrorTransactionId === null ? null : await getTransaction(existing.mirrorTransactionId);
+    const advanceCategoryId = await getSystemCategoryId('avance');
+    const transferCategoryId = await getTransferCategoryId();
+
+    // The box is only the user's choice outside Avancé and movements, where it is forced on.
+    const forcedOffBalance =
+      existing.categoryId !== null &&
+      (existing.categoryId === advanceCategoryId || existing.categoryId === transferCategoryId);
+
+    const input: NewTransaction = {
+      accountId: changes.accountId ?? existing.accountId,
+      operationDate: changes.operationDate ?? existing.operationDate,
+      bankDate: changes.bankDate !== undefined ? changes.bankDate : existing.bankDate,
+      comment: changes.comment ?? existing.comment,
+      amount: changes.amount ?? existing.amount,
+      categoryId: changes.categoryId !== undefined ? changes.categoryId : existing.categoryId,
+      status: changes.status ?? existing.status,
+      importance: changes.importance ?? existing.importance ?? undefined,
+      offBalance: changes.offBalance ?? (forcedOffBalance ? false : existing.offBalance),
+      advanceType: changes.advanceType ?? existing.advanceType ?? undefined,
+      splits:
+        changes.splits ??
+        existing.splits.map((s) => ({
+          categoryId: s.categoryId,
+          amount: s.amount,
+          advanceType: s.advanceType ?? undefined,
+        })),
+      transferToAccountId: changes.transferToAccountId ?? mirror?.accountId,
+    };
+
+    const { fields, splits, isTransfer } = await prepareTransaction(input);
+    if (isTransfer !== (mirror !== null)) {
+      throw new Error('An inter-account movement cannot be turned into a plain operation, or the reverse.');
+    }
+
+    await db.transactionAsync(async () => {
+      await db.runAsync(
+        `UPDATE transactions SET account_id = ?, operation_date = ?, bank_date = ?, comment = ?,
+           amount = ?, category_id = ?, status = ?, importance = ?, off_balance = ?, advance_type = ?
+         WHERE id = ?`,
+        [
+          fields.accountId,
+          fields.operationDate,
+          fields.bankDate,
+          fields.comment,
+          fields.amount,
+          fields.categoryId,
+          fields.status,
+          fields.importance,
+          fields.offBalance ? 1 : 0,
+          fields.advanceType,
+          id,
+        ]
+      );
+      await db.runAsync('DELETE FROM transaction_splits WHERE transaction_id = ?', [id]);
+      for (const line of splits) {
+        await db.runAsync(
+          'INSERT INTO transaction_splits (transaction_id, category_id, amount, advance_type) VALUES (?, ?, ?, ?)',
+          [id, line.categoryId, line.amount, line.advanceType]
+        );
+      }
+      if (mirror) {
+        await db.runAsync(
+          'UPDATE transactions SET account_id = ?, operation_date = ?, comment = ?, amount = ? WHERE id = ?',
+          [
+            input.transferToAccountId as number,
+            fields.operationDate,
+            fields.comment,
+            -fields.amount,
+            mirror.id,
+          ]
+        );
+      }
+    });
+    notifyChange();
+  }
+
+  /**
+   * Deletes a transaction, its portions and, for an inter-account movement,
+   * the other leg. An advance paid back by a deleted income goes back to
+   * the pending list.
+   */
+  async function deleteTransaction(id: number): Promise<void> {
+    const existing = await getTransaction(id);
+    if (!existing) return;
+    const ids = existing.mirrorTransactionId === null ? [id] : [id, existing.mirrorTransactionId];
+    await db.transactionAsync(async () => {
+      for (const gone of ids) {
+        await db.runAsync('DELETE FROM transaction_splits WHERE transaction_id = ?', [gone]);
+        await db.runAsync('UPDATE transactions SET reimbursed_by_id = NULL WHERE reimbursed_by_id = ?', [gone]);
+        await db.runAsync('UPDATE transaction_splits SET reimbursed_by_id = NULL WHERE reimbursed_by_id = ?', [gone]);
+        await db.runAsync(
+          'UPDATE transactions SET counterpart_transaction_id = NULL WHERE counterpart_transaction_id = ?',
+          [gone]
+        );
+        await db.runAsync('DELETE FROM transactions WHERE id = ?', [gone]);
+      }
+    });
+    notifyChange();
   }
 
   async function getTransaction(id: number): Promise<Transaction | null> {
@@ -2197,6 +2318,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     deleteAccount,
     getCurrentAccount,
     createTransaction,
+    updateTransaction,
+    deleteTransaction,
     getTransaction,
     setPointed,
     listMonthTransactions,

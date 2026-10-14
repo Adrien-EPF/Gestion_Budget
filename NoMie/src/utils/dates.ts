@@ -88,3 +88,19 @@ export function toTypedDate(isoDate: string): string {
   const [year, month, day] = isoDate.slice(0, 10).split('-');
   return `${day}/${month}/${year}`;
 }
+
+/** `"2026-09-11"` -> `"11/09/2026"`, the way a date is typed in the Opération screen. */
+export function formatNumericDate(isoDate: string): string {
+  const [year, month, day] = isoDate.slice(0, 10).split('-');
+  return `${day}/${month}/${year}`;
+}
+
+/** `"11/09/2026"` -> `"2026-09-11"`; `null` when it isn't a real calendar date. */
+export function parseNumericDate(text: string): string | null {
+  const match = /^\s*(\d{1,2})\/(\d{1,2})\/(\d{4})\s*$/.exec(text);
+  if (!match) return null;
+  const [day, month, year] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return toIsoDate(date);
+}

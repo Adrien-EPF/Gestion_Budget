@@ -1,4 +1,6 @@
 import {
+  formatNumericDate,
+  parseNumericDate,
   dayOfMonth,
   formatDayMonth,
   formatLongDate,
@@ -53,5 +55,19 @@ describe('date typing and long forms', () => {
 
   it('writes a date the way it is typed', () => {
     expect(toTypedDate('2026-10-05')).toBe('05/10/2026');
+  });
+});
+
+describe('numeric dates', () => {
+  it('round-trips jj/mm/aaaa and ISO', () => {
+    expect(formatNumericDate('2026-09-11')).toBe('11/09/2026');
+    expect(parseNumericDate('11/09/2026')).toBe('2026-09-11');
+    expect(parseNumericDate(' 1/9/2026 ')).toBe('2026-09-01');
+  });
+
+  it('rejects what is not a real date', () => {
+    expect(parseNumericDate('31/02/2026')).toBeNull();
+    expect(parseNumericDate('2026-09-11')).toBeNull();
+    expect(parseNumericDate('')).toBeNull();
   });
 });

@@ -86,7 +86,7 @@ describe('Écran Comptes', () => {
   });
 
   describe('À pointer', () => {
-    it('lists Non Pointé operations; tapping one marks it Pointé, removes it and moves the balances', async () => {
+    it('lists Non Pointé operations; tapping its pill marks it Pointé, removes it and moves the balances', async () => {
       const courant = await seedAccount(app.dataService, 'Compte courant', 1000);
       await seedTransaction(app.dataService, {
         accountId: courant,
@@ -102,7 +102,7 @@ describe('Écran Comptes', () => {
         `Pointé ${formatAmount(1000)}`
       );
 
-      await press(screen.getByLabelText('Carrefour Market, Non pointé'));
+      await press(screen.getByLabelText('Pointer Carrefour Market'));
 
       expect(screen.queryByText('Carrefour Market')).toBeNull();
       expect(screen.getByText('Tout est pointé, rien à faire de ce côté.')).toBeTruthy();
@@ -164,7 +164,7 @@ describe('Écran Comptes', () => {
       await openAccounts();
 
       expect(screen.getAllByLabelText('Vers Livret A, Non pointé')).toHaveLength(2);
-      await press(screen.getAllByLabelText('Vers Livret A, Non pointé')[0]);
+      await press(screen.getAllByLabelText('Pointer Vers Livret A')[0]);
       expect(screen.getAllByLabelText('Vers Livret A, Non pointé')).toHaveLength(1);
       expect(screen.getByTestId('accounts-total-real').props.children).toBe(formatAmount(1500));
     });
