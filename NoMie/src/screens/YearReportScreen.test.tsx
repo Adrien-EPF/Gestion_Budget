@@ -49,6 +49,23 @@ describe('Écran Bilan annuel (#25)', () => {
     expect(screen.getByText('Solde réel · tous comptes')).toBeTruthy();
   });
 
+  it('splits the year’s bilan expenses per importance', async () => {
+    await act(async () => {
+      for (const [amount, importance, date] of [
+        [-30, 'essentiel', `${year}-01-10`],
+        [-10, 'secondaire_superflu', `${year}-01-20`],
+      ] as const) {
+        await app.dataService.createTransaction({ accountId, operationDate: date, amount, importance, status: 'pointe' });
+      }
+    });
+    await openYearReport();
+
+    const card = await screen.findByTestId('year-importance');
+    expect(within(card).getByLabelText(`Essentiel, ${formatAmount(30)}`)).toBeTruthy();
+    expect(within(card).getByLabelText(`Secondaire superflu, ${formatAmount(10)}`)).toBeTruthy();
+    expect(within(card).getByText('75 %')).toBeTruthy();
+  });
+
   it('opens on the year of the month chosen on Accueil', async () => {
     for (let i = 0; i <= new Date().getMonth(); i++) {
       await press(screen.getByLabelText('Mois précédent'));
@@ -188,6 +205,7 @@ describe('Écran Bilan annuel (#25)', () => {
       expect(sectionTitles()).toEqual([
         'Soldes en fin de mois',
         'Dépenses par catégorie',
+        'Dépenses par importance',
         'Budgets · prévu et réalisé',
         'Recettes par catégorie',
         'Opérations par compte',
@@ -223,7 +241,7 @@ describe('Écran Bilan annuel (#25)', () => {
       await press(screen.getByRole('button', { name: `Voir ${year}` }));
 
       expect(screen.getByTestId('year-report-year').props.children).toBe(String(year));
-      expect(sectionTitles()).toHaveLength(5);
+      expect(sectionTitles()).toHaveLength(6);
     });
 
     it('groups the spending table exactly like its chart, with a total line', async () => {

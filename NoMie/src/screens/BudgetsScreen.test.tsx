@@ -73,7 +73,7 @@ describe('Écran Budgets', () => {
 
       const { budgets } = await app.dataService.getBudgetOverview(THIS_MONTH);
       expect(budgets).toHaveLength(1);
-      expect(budgets[0].budget).toMatchObject({ categoryName: 'Restaurant', amount: 120, carryOver: false });
+      expect(budgets[0].budget).toMatchObject({ name: 'Restaurant', amount: 120, carryOver: false });
 
       expect(await screen.findByText(plain('0 / 120 €'))).toBeTruthy();
       expect(screen.getByTestId('budgets-planned').props.children).toBe(formatAmount(120));
@@ -82,12 +82,53 @@ describe('Écran Budgets', () => {
       expect(screen.queryByLabelText('Restaurant')).toBeNull();
     });
 
+    it('creates a budget on an importance level, once per level, and shows it consuming the bilan', async () => {
+      await seed((s) =>
+        s.createTransaction({
+          accountId,
+          operationDate: today,
+          amount: -45,
+          categoryId: cat['Loisir'],
+          importance: 'secondaire_superflu',
+        })
+      );
+      await openBudgets();
+
+      await press(screen.getByText('+ Ajouter un budget'));
+      await press(screen.getByLabelText('Par importance'));
+      await press(screen.getByLabelText('Secondaire superflu'));
+      await typeInto(screen.getByLabelText('Montant prévu par mois'), '150');
+      await press(screen.getByLabelText('Ajouter'));
+
+      const { budgets } = await app.dataService.getBudgetOverview(THIS_MONTH);
+      expect(budgets[0].budget).toMatchObject({ importance: 'secondaire_superflu', categoryId: null, amount: 150 });
+      expect(await screen.findByText(plain('45 / 150 €'))).toBeTruthy();
+      expect(screen.getByText('Secondaire superflu')).toBeTruthy();
+
+      // The level is taken: it is no longer offered.
+      await press(screen.getByText('+ Ajouter un budget'));
+      await press(screen.getByLabelText('Par importance'));
+      expect(screen.queryByLabelText('Secondaire superflu')).toBeNull();
+      expect(screen.getByLabelText('Essentiel')).toBeTruthy();
+    });
+
+    it('asks for a level when none is chosen', async () => {
+      await openBudgets();
+      await press(screen.getByText('+ Ajouter un budget'));
+      await press(screen.getByLabelText('Par importance'));
+      await typeInto(screen.getByLabelText('Montant prévu par mois'), '50');
+      await press(screen.getByLabelText('Ajouter'));
+
+      expect(screen.getByText('Choisis la catégorie ou le niveau à suivre.')).toBeTruthy();
+      expect((await app.dataService.getBudgetOverview(THIS_MONTH)).budgets).toEqual([]);
+    });
+
     it('asks for a category and a valid amount, without creating anything', async () => {
       await openBudgets();
       await press(screen.getByText('+ Ajouter un budget'));
 
       await press(screen.getByLabelText('Ajouter'));
-      expect(screen.getByText('Choisis la catégorie à suivre.')).toBeTruthy();
+      expect(screen.getByText('Choisis la catégorie ou le niveau à suivre.')).toBeTruthy();
       expect(screen.getByText(/doit être un nombre supérieur à zéro/)).toBeTruthy();
 
       await press(screen.getByLabelText('Loisir'));
@@ -174,7 +215,7 @@ describe('Écran Budgets', () => {
       expect(loisirSwitch).toBeTruthy();
 
       const { budgets } = await app.dataService.getBudgetOverview(THIS_MONTH);
-      expect(budgets.map((b) => [b.budget.categoryName, b.budget.carryOver])).toEqual([
+      expect(budgets.map((b) => [b.budget.name, b.budget.carryOver])).toEqual([
         ['Loisir', false],
         ['Restaurant', true],
       ]);

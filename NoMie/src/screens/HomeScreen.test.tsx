@@ -74,6 +74,21 @@ describe('Écran Accueil', () => {
     expect(screen.getByTestId('home-month-income').props.children).toBe(formatAmount(100));
   });
 
+  it('shows where the month’s bilan expenses go, per importance, calmly', async () => {
+    expect(screen.queryByTestId('home-importance')).toBeNull();
+
+    await add({ operationDate: today, amount: -60, importance: 'essentiel' });
+    await add({ operationDate: today, amount: -20, importance: 'secondaire_superflu', status: 'fantome' });
+    await add({ operationDate: today, amount: -500, importance: 'exceptionnel', offBalance: true });
+
+    const card = await screen.findByTestId('home-importance');
+    expect(within(card).getByLabelText(`Essentiel, ${formatAmount(60)}`)).toBeTruthy();
+    expect(within(card).getByLabelText(`Secondaire superflu, ${formatAmount(20)}`)).toBeTruthy();
+    expect(within(card).getByLabelText(`Exceptionnel, ${formatAmount(0)}`)).toBeTruthy();
+    expect(within(card).getByText('75 %')).toBeTruthy();
+    expect(screen.queryByText(/!/)).toBeNull();
+  });
+
   it('explains, factually, that a Prévision is already counted in the real balance', async () => {
     await add({ operationDate: today, amount: 2380, status: 'prevision', comment: 'Salaire' });
 

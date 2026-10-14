@@ -25,7 +25,7 @@ export function BudgetCard({ progress, month, onShowYear }: BudgetCardProps) {
     <View style={styles.card}>
       <View style={styles.header}>
         <Text style={[textStyle('headingSm'), styles.name]} numberOfLines={1}>
-          {budget.categoryName}
+          {budget.name}
         </Text>
         <Text style={[textStyle('amountSm'), styles.ratio]}>{formatBudgetRatio(spent, ceiling)}</Text>
       </View>
@@ -49,7 +49,7 @@ export function BudgetCard({ progress, month, onShowYear }: BudgetCardProps) {
         <Switch
           value={budget.carryOver}
           onValueChange={(carryOver) => dataService.setBudgetCarryOver(budget.id, carryOver)}
-          accessibilityLabel={`Report du reliquat, ${budget.categoryName}`}
+          accessibilityLabel={`Report du reliquat, ${budget.name}`}
         />
       </View>
 
@@ -57,7 +57,7 @@ export function BudgetCard({ progress, month, onShowYear }: BudgetCardProps) {
         <Button
           label="Voir l’année"
           variant="ghost"
-          accessibilityLabel={`Voir l’année, ${budget.categoryName}`}
+          accessibilityLabel={`Voir l’année, ${budget.name}`}
           onPress={onShowYear}
           style={styles.yearLink}
         />

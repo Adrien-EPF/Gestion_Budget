@@ -6,6 +6,7 @@ import { BudgetYearChart } from '../components/charts/BudgetYearChart';
 import { CategoryBreakdownChart } from '../components/charts/CategoryBreakdownChart';
 import { groupExpenses, type ExpenseGroup } from '../components/charts/chartGeometry';
 import { Chips } from '../components/Chips';
+import { ImportanceBreakdownCard } from '../components/ImportanceBreakdownCard';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
 import { YearTable, type YearTableRow } from '../components/YearTable';
 import { monthName } from '../navigation/formatMonthLabel';
@@ -35,6 +36,7 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
   const changes = useServiceQuery((s) => s.getNetChangesByMonth(year), [year]);
   const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
   const budgetYear = useServiceQuery((s) => s.getBudgetYear(year), [year]);
+  const importanceShares = useServiceQuery((s) => s.getImportanceBreakdown({ year }), [year]);
 
   // The year Accueil was on stays reachable, even outside the years with data.
   const firstYear = Math.min(status?.firstYear ?? year, initialYear);
@@ -145,6 +147,14 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
                 )}
               </Section>
 
+              <Section title="Dépenses par importance">
+                {importanceShares && importanceShares.some((share) => share.amount > 0) ? (
+                  <ImportanceBreakdownCard testID="year-importance" shares={importanceShares} />
+                ) : (
+                  <EmptyCard text="Rien à répartir cette année." />
+                )}
+              </Section>
+
               <Section title="Budgets · prévu et réalisé">
                 {budgetYear && budgetYear.budgets.length > 0 ? (
                   <BudgetSection key={year} overview={budgetYear} />
@@ -206,7 +216,7 @@ function BudgetSection({ overview }: { overview: BudgetYearOverview }) {
           scroll
           value={shown.budget.id}
           onChange={setBudgetId}
-          options={overview.budgets.map(({ budget }) => ({ value: budget.id, label: budget.categoryName }))}
+          options={overview.budgets.map(({ budget }) => ({ value: budget.id, label: budget.name }))}
         />
       }
     />

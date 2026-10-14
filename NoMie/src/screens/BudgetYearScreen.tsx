@@ -26,7 +26,7 @@ export function BudgetYearScreen({ budget, year, onClose }: BudgetYearScreenProp
   return (
     <Modal visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
       <View style={styles.root}>
-        <ModalScreenHeader title={budget.categoryName} testID="budget-year-title" onClose={onClose} />
+        <ModalScreenHeader title={budget.name} testID="budget-year-title" onClose={onClose} />
         <ScrollView contentContainerStyle={styles.content}>
           <Text style={[textStyle('headingSm'), styles.title]}>{`Prévu et réalisé en ${year}`}</Text>
           {overview && budgetYear ? (

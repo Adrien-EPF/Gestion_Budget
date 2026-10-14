@@ -169,6 +169,19 @@ export interface TransactionListItem extends TransactionFields {
   advancedAmount: number;
 }
 
+export const IMPORTANCE_LEVELS: Importance[] = [
+  'essentiel',
+  'secondaire_important',
+  'secondaire_superflu',
+  'exceptionnel',
+];
+
+/** What one importance level makes of the bilan expenses of a period. */
+export interface ImportanceShare {
+  importance: Importance;
+  amount: number;
+}
+
 export interface LabelSuggestion {
   /** The label as last typed. */
   label: string;
@@ -302,10 +315,13 @@ export interface PendingAdvances {
   total: number;
 }
 
+/** A budget is on a category or on an importance level: exactly one of the two. */
 export interface Budget {
   id: number;
-  categoryId: number;
-  categoryName: string;
+  categoryId: number | null;
+  importance: Importance | null;
+  /** The category's name, or the importance level's label. */
+  name: string;
   /** Monthly ceiling, before any carry-over. */
   amount: number;
   carryOver: boolean;
@@ -314,7 +330,9 @@ export interface Budget {
 }
 
 export interface NewBudget {
-  categoryId: number;
+  /** Exactly one of `categoryId` and `importance`. */
+  categoryId?: number;
+  importance?: Importance;
   amount: number;
   carryOver?: boolean;
   /** Defaults to the current month. */
@@ -503,8 +521,9 @@ interface FullSplitRow {
 
 interface BudgetRow {
   id: number;
-  category_id: number;
-  category_name: string;
+  category_id: number | null;
+  importance: Importance | null;
+  category_name: string | null;
   amount: number;
   carry_over: number;
   start_month: string;
@@ -632,7 +651,8 @@ function toBudget(row: BudgetRow): Budget {
   return {
     id: row.id,
     categoryId: row.category_id,
-    categoryName: row.category_name,
+    importance: row.importance,
+    name: row.importance ? IMPORTANCE_LABELS[row.importance] : (row.category_name ?? ''),
     amount: row.amount,
     carryOver: row.carry_over === 1,
     startMonth: parseMonthKey(row.start_month),
@@ -724,16 +744,17 @@ const BILAN_STATUSES = `t.status IN ('non_pointe', 'pointe', 'fantome')`;
  * The parts the bilan comptable is made of (ADR 0004): each part of a split
  * operation, or the operation itself when it isn't split. Fantôme counts,
  * Prévision doesn't; Hors bilan operations and Avancé portions are left out.
- * Columns: account_id, operation_date, category_id, amount.
+ * Columns: account_id, operation_date, category_id, amount, importance (the operation's:
+ * a part has none of its own).
  */
 const BILAN_PARTS = `
   SELECT t.account_id AS account_id, t.operation_date AS operation_date,
-    t.category_id AS category_id, t.amount AS amount
+    t.category_id AS category_id, t.amount AS amount, t.importance AS importance
   FROM transactions t
   WHERE ${BILAN_STATUSES} AND t.off_balance = 0
     AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
   UNION ALL
-  SELECT t.account_id, t.operation_date, s.category_id, s.amount
+  SELECT t.account_id, t.operation_date, s.category_id, s.amount, t.importance
   FROM transaction_splits s
   JOIN transactions t ON t.id = s.transaction_id
   LEFT JOIN categories sc ON sc.id = s.category_id
@@ -1496,6 +1517,29 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
+   * Where the bilan expenses of a month (active accounts) or of a year (every account, like the
+   * rest of the Bilan annuel) go, per importance level: always the four levels, in their order.
+   * Only expenses carry an importance, so recettes and Hors bilan operations never show here.
+   */
+  async function getImportanceBreakdown(
+    period: { month: MonthRef } | { year: number }
+  ): Promise<ImportanceShare[]> {
+    const [start, end] = 'month' in period ? monthBounds(period.month) : yearBounds(period.year);
+    const rows = await db.getAllAsync<{ importance: Importance; amount: number }>(
+      `SELECT p.importance AS importance, SUM(-p.amount) AS amount
+       FROM (${BILAN_PARTS}) p JOIN accounts a ON a.id = p.account_id
+       WHERE ${'month' in period ? 'a.archived = 0 AND' : ''} p.operation_date >= ? AND p.operation_date < ?
+         AND p.amount < 0 AND p.importance IS NOT NULL
+       GROUP BY p.importance`,
+      [start, end]
+    );
+    return IMPORTANCE_LEVELS.map((importance) => ({
+      importance,
+      amount: roundToCents(rows.find((row) => row.importance === importance)?.amount ?? 0),
+    }));
+  }
+
+  /**
    * The frame of the Bilan annuel (§6.7): its year selector runs from the
    * first year with an operation to the current one, and a year without
    * any operation is shown as a single empty card.
@@ -1791,30 +1835,51 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     return rows.map(toCategory);
   }
 
+  /** Importance levels a budget can still be created for, from Essentiel to Exceptionnel. */
+  async function listImportancesWithoutBudget(): Promise<Importance[]> {
+    const taken = await db.getAllAsync<{ importance: Importance }>(
+      'SELECT importance FROM budgets WHERE importance IS NOT NULL'
+    );
+    return IMPORTANCE_LEVELS.filter((level) => !taken.some((row) => row.importance === level));
+  }
+
   async function createBudget(input: NewBudget): Promise<Budget> {
     if (!(input.amount > 0)) throw new Error('A budget ceiling must be greater than zero.');
-    const category = await db.getFirstAsync<CategoryRow>('SELECT * FROM categories WHERE id = ?', [
-      input.categoryId,
-    ]);
-    if (!category) throw new Error(`Category ${input.categoryId} does not exist.`);
+    const categoryId = input.categoryId ?? null;
+    const importance = input.importance ?? null;
+    if ((categoryId === null) === (importance === null)) {
+      throw new Error('A budget is on a category or on an importance level, not both and not neither.');
+    }
+
+    let name: string;
+    if (categoryId !== null) {
+      const category = await db.getFirstAsync<CategoryRow>('SELECT * FROM categories WHERE id = ?', [categoryId]);
+      if (!category) throw new Error(`Category ${categoryId} does not exist.`);
+      name = category.name;
+    } else {
+      name = IMPORTANCE_LABELS[importance as Importance];
+    }
     const existing = await db.getFirstAsync<{ id: number }>(
-      'SELECT id FROM budgets WHERE category_id = ?',
-      [input.categoryId]
+      categoryId !== null
+        ? 'SELECT id FROM budgets WHERE category_id = ?'
+        : 'SELECT id FROM budgets WHERE importance = ?',
+      [categoryId ?? importance]
     );
-    if (existing) throw new Error(`« ${category.name} » already has a budget.`);
+    if (existing) throw new Error(`« ${name} » already has a budget.`);
 
     const current = now();
     const startMonth = input.startMonth ?? { year: current.getFullYear(), month: current.getMonth() };
     const carryOver = input.carryOver ?? false;
     const result = await db.runAsync(
-      'INSERT INTO budgets (category_id, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?)',
-      [input.categoryId, input.amount, 'monthly', carryOver ? 1 : 0, monthKey(startMonth)]
+      'INSERT INTO budgets (category_id, importance, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?, ?)',
+      [categoryId, importance, input.amount, 'monthly', carryOver ? 1 : 0, monthKey(startMonth)]
     );
     notifyChange();
     return {
       id: result.lastInsertRowId,
-      categoryId: input.categoryId,
-      categoryName: category.name,
+      categoryId,
+      importance,
+      name,
       amount: input.amount,
       carryOver,
       startMonth,
@@ -1827,21 +1892,20 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   /**
-   * Net spend of one category per month on `[from, to)`, as `YYYY-MM` -> amount.
-   * The bilan comptable's rules, like the month summary, on active accounts. A split transaction counts through its portions'
-   * categories, an unsplit one through its own; a refund offsets spending.
+   * Net spend of one budget per month on `[from, to)`, as `YYYY-MM` -> amount: its category's, or
+   * its importance level's. The bilan comptable's rules, like the month summary, on active
+   * accounts. A split transaction counts through its portions' categories, an unsplit one through
+   * its own; a refund offsets spending.
    */
-  async function getCategorySpendByMonth(
-    categoryId: number,
-    from: string,
-    to: string
-  ): Promise<Map<string, number>> {
+  async function getBudgetSpendByMonth(budget: Budget, from: string, to: string): Promise<Map<string, number>> {
+    const onCategory = budget.categoryId !== null;
     const rows = await db.getAllAsync<{ ym: string; net: number }>(
       `SELECT substr(p.operation_date, 1, 7) AS ym, SUM(p.amount) AS net
        FROM (${BILAN_PARTS}) p JOIN accounts a ON a.id = p.account_id
-       WHERE a.archived = 0 AND p.operation_date >= ? AND p.operation_date < ? AND p.category_id = ?
+       WHERE a.archived = 0 AND p.operation_date >= ? AND p.operation_date < ?
+         AND ${onCategory ? 'p.category_id' : 'p.importance'} = ?
        GROUP BY ym`,
-      [from, to, categoryId]
+      [from, to, onCategory ? budget.categoryId : budget.importance]
     );
     return new Map(rows.map((row) => [row.ym, Math.max(0, roundToCents(-row.net))]));
   }
@@ -1877,8 +1941,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   }
 
   async function measureBudget(budget: Budget, month: MonthRef): Promise<BudgetProgress> {
-    const spentByMonth = await getCategorySpendByMonth(
-      budget.categoryId,
+    const spentByMonth = await getBudgetSpendByMonth(
+      budget,
       monthBounds(budget.startMonth)[0],
       monthBounds(month)[1]
     );
@@ -1896,16 +1960,18 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     };
   }
 
-  /** Budgets started by `month`, in category order. */
+  /** Budgets started by `month`: the categories in their order, then the importance levels. */
   async function listBudgetsInForceAt(month: MonthRef): Promise<Budget[]> {
     const rows = await db.getAllAsync<BudgetRow>(
       `SELECT b.*, c.name AS category_name
-       FROM budgets b JOIN categories c ON c.id = b.category_id
+       FROM budgets b LEFT JOIN categories c ON c.id = b.category_id
        WHERE b.start_month <= ?
-       ORDER BY c.sort_order ASC`,
+       ORDER BY c.sort_order IS NULL, c.sort_order ASC`,
       [monthKey(month)]
     );
-    return rows.map(toBudget);
+    // SQL put the categories first; the levels follow in their natural order.
+    const levelOrder = (budget: Budget) => (budget.importance ? IMPORTANCE_LEVELS.indexOf(budget.importance) + 1 : 0);
+    return rows.map(toBudget).sort((a, b) => levelOrder(a) - levelOrder(b));
   }
 
   /** Budgets in force during `month`, each measured against that month, in category order. */
@@ -1934,8 +2000,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
     const budgets = await Promise.all(
       (await listBudgetsInForceAt(december)).map(async (budget) => {
-        const spentByMonth = await getCategorySpendByMonth(
-          budget.categoryId,
+        const spentByMonth = await getBudgetSpendByMonth(
+          budget,
           monthBounds(budget.startMonth)[0],
           monthBounds(realizedThrough)[1]
         );
@@ -2347,7 +2413,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       db.getAllAsync<TransactionRow>('SELECT * FROM transactions ORDER BY id ASC'),
       db.getAllAsync<FullSplitRow>('SELECT * FROM transaction_splits ORDER BY id ASC'),
       db.getAllAsync<BudgetRow>(
-        'SELECT b.*, c.name AS category_name FROM budgets b JOIN categories c ON c.id = b.category_id ORDER BY b.id ASC'
+        'SELECT b.*, c.name AS category_name FROM budgets b LEFT JOIN categories c ON c.id = b.category_id ORDER BY b.id ASC'
       ),
       db.getAllAsync<RecurrenceRuleListRow>(`${RULE_LIST_SELECT} ORDER BY r.id ASC`),
     ]);
@@ -2413,10 +2479,11 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     );
 
     const budgetsCsv = buildCsv(
-      ['Id', 'Catégorie', 'Montant', 'Report', 'Premier mois'],
+      ['Id', 'Catégorie', 'Importance', 'Montant', 'Report', 'Premier mois'],
       budgetRows.map((b) => [
         String(b.id),
-        b.category_name,
+        b.category_name ?? '',
+        b.importance ? IMPORTANCE_LABELS[b.importance] : '',
         formatCsvAmount(b.amount),
         csvBool(b.carry_over === 1),
         b.start_month,
@@ -2510,6 +2577,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     listAccountSummaries,
     getBalanceTotals,
     getMonthSummary,
+    getImportanceBreakdown,
     getYearStatus,
     getCategoryFlowsByMonth,
     getNetChangesByMonth,
@@ -2518,6 +2586,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     listPendingAdvances,
     markAdvanceReimbursed,
     listCategoriesWithoutBudget,
+    listImportancesWithoutBudget,
     createBudget,
     setBudgetCarryOver,
     getBudgetOverview,

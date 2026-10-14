@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AdvancesCard } from '../components/AdvancesCard';
 import { BudgetCard } from '../components/BudgetCard';
+import { ImportanceBreakdownCard } from '../components/ImportanceBreakdownCard';
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { TransactionRow } from '../components/TransactionRow';
@@ -31,6 +32,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const monthSummary = useServiceQuery((s) => s.getMonthSummary({ year, month }), [year, month]);
   const transactions = useServiceQuery((s) => s.listMonthTransactions({ year, month }), [year, month]);
   const budgetOverview = useServiceQuery((s) => s.getBudgetOverview({ year, month }), [year, month]);
+  const importanceShares = useServiceQuery((s) => s.getImportanceBreakdown({ month: { year, month } }), [year, month]);
   const advances = useServiceQuery((s) => s.getPendingAdvances());
 
   if (
@@ -40,6 +42,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
     !monthSummary ||
     !transactions ||
     !budgetOverview ||
+    !importanceShares ||
     !advances
   ) {
     return <Screen title="NoMie" showMonthSelector>{null}</Screen>;
@@ -140,6 +143,12 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
             </Text>
           </View>
         </View>
+        {importanceShares.some((share) => share.amount > 0) ? (
+          <>
+            <Text style={[textStyle('headingSm'), styles.sectionTitle]}>Dépenses par importance</Text>
+            <ImportanceBreakdownCard testID="home-importance" shares={importanceShares} />
+          </>
+        ) : null}
         {monthSummary.forecastCount > 0 ? (
           <Text style={[textStyle('bodySm'), styles.note]}>{forecastNote(monthSummary)}</Text>
         ) : null}

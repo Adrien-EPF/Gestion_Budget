@@ -35,7 +35,7 @@ describe('dataService — budgets', () => {
 
   const restaurant = async (month: MonthRef) => {
     const { budgets } = await dataService.getBudgetOverview(month);
-    return budgets.find((b) => b.budget.categoryName === 'Restaurant')!;
+    return budgets.find((b) => b.budget.name === 'Restaurant')!;
   };
 
   describe('creating', () => {
@@ -47,7 +47,7 @@ describe('dataService — budgets', () => {
       });
       expect(budget).toMatchObject({
         categoryId: cat['Restaurant'],
-        categoryName: 'Restaurant',
+        name: 'Restaurant',
         amount: 120,
         carryOver: false,
         startMonth: SEPT,
@@ -241,7 +241,7 @@ describe('dataService — budgets', () => {
       await spend('Loisir', 60, '2026-08-10');
 
       const { budgets } = await dataService.getBudgetOverview(SEPT);
-      const ceiling = (name: string) => budgets.find((b) => b.budget.categoryName === name)!.ceiling;
+      const ceiling = (name: string) => budgets.find((b) => b.budget.name === name)!.ceiling;
       expect(ceiling('Restaurant')).toBe(140);
       expect(ceiling('Loisir')).toBe(100);
     });
@@ -359,7 +359,7 @@ describe('dataService — budgets', () => {
     it('lists budgets in category order', async () => {
       await dataService.createBudget({ categoryId: cat['Loisir'], amount: 50, startMonth: SEPT });
       await dataService.createBudget({ categoryId: cat['Alimentation/Entretien essentiel'], amount: 300, startMonth: SEPT });
-      const names = (await dataService.getBudgetOverview(SEPT)).budgets.map((b) => b.budget.categoryName);
+      const names = (await dataService.getBudgetOverview(SEPT)).budgets.map((b) => b.budget.name);
       expect(names).toEqual(['Alimentation/Entretien essentiel', 'Loisir']);
     });
   });

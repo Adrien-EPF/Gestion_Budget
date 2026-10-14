@@ -30,7 +30,7 @@ describe('dataService — budget prévu vs réalisé mois par mois (§6.7)', () 
 
   const months = async (year: number, category = 'Restaurant') => {
     const overview = await dataService.getBudgetYear(year);
-    return overview.budgets.find((b) => b.budget.categoryName === category)!.months;
+    return overview.budgets.find((b) => b.budget.name === category)!.months;
   };
   const pick = (list: BudgetMonth[], ...keys: (keyof BudgetMonth)[]) =>
     list.map((m) => Object.fromEntries(keys.map((k) => [k, m[k]])));

@@ -9,7 +9,8 @@ import { BudgetYearChart } from './BudgetYearChart';
 const budget: Budget = {
   id: 1,
   categoryId: 1,
-  categoryName: 'Restaurant',
+  name: 'Restaurant',
+  importance: null,
   amount: 120,
   carryOver: false,
   startMonth: { year: 2026, month: 0 },

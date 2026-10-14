@@ -14,7 +14,8 @@ function progress(overrides: Partial<BudgetProgress>): BudgetProgress {
     budget: {
       id: 1,
       categoryId: 1,
-      categoryName: 'Restaurant',
+      name: 'Restaurant',
+      importance: null,
       amount: 100,
       carryOver: false,
       startMonth: SEPT,
@@ -90,6 +91,27 @@ describe('describeBudget', () => {
       'Un peu plus qu’en général ce mois-ci — le reliquat d’août couvre une partie.'
     );
     expect(describeBudget(over, SEPT)).not.toMatch(/dépass|attention|!/i);
+  });
+});
+
+describe('describeBudget on an importance level', () => {
+  const superflu = (overrides: Partial<BudgetProgress>) =>
+    progress({
+      ...overrides,
+      budget: { ...progress({}).budget, categoryId: null, importance: 'secondaire_superflu', name: 'Secondaire superflu' },
+    });
+
+  it('stays as factual and calm as for a category, with no exclamation mark or alarm', () => {
+    const texts = [
+      describeBudget(superflu({ remaining: 85 }), SEPT),
+      describeBudget(superflu({ exceeded: true, remaining: -20 }), SEPT),
+      describeBudget(superflu({ exceeded: true, remaining: -20, carriedOver: 30 }), SEPT),
+    ];
+    expect(texts[0]).toBe(`Il reste ${formatAmount(85)} pour ce mois-ci.`);
+    for (const text of texts) {
+      expect(text).not.toContain('!');
+      expect(text).not.toMatch(/dépass|alerte|attention|trop/i);
+    }
   });
 });
 

@@ -39,7 +39,7 @@ export function BudgetsScreen() {
           </>
         ) : (
           <Text style={[textStyle('bodyMd'), styles.note]}>
-            Aucun budget pour ce mois-ci. Ajoutes-en un pour suivre une catégorie.
+            Aucun budget pour ce mois-ci. Ajoutes-en un pour suivre une catégorie ou un niveau d’importance.
           </Text>
         )}
         <Button label="+ Ajouter un budget" variant="ghost" onPress={() => setAdding(true)} />
