@@ -1075,7 +1075,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           fields.bankDate,
           fields.comment,
           amount,
-          categoryId === undefined ? await getDefaultCounterpartCategoryId() : categoryId,
+          // Salaire/Intérêts/Avantages only fits the income side.
+          categoryId === undefined ? (amount > 0 ? await getDefaultCounterpartCategoryId() : null) : categoryId,
           amount < 0 ? 'essentiel' : null,
         ]
       )
@@ -1228,11 +1229,20 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           id,
         ]
       );
+      // A reimbursed portion that is still there after the edit stays reimbursed.
+      const paidBack = await db.getAllAsync<{ category_id: number | null; amount: number; reimbursed_by_id: number }>(
+        `SELECT category_id, amount, reimbursed_by_id FROM transaction_splits
+         WHERE transaction_id = ? AND reimbursed_by_id IS NOT NULL`,
+        [id]
+      );
       await db.runAsync('DELETE FROM transaction_splits WHERE transaction_id = ?', [id]);
       for (const line of splits) {
+        const kept = paidBack.findIndex((old) => old.category_id === line.categoryId && old.amount === line.amount);
+        const reimbursedById = kept === -1 ? null : paidBack.splice(kept, 1)[0].reimbursed_by_id;
         await db.runAsync(
-          'INSERT INTO transaction_splits (transaction_id, category_id, amount, advance_type) VALUES (?, ?, ?, ?)',
-          [id, line.categoryId, line.amount, line.advanceType]
+          `INSERT INTO transaction_splits (transaction_id, category_id, amount, advance_type, reimbursed_by_id)
+           VALUES (?, ?, ?, ?, ?)`,
+          [id, line.categoryId, line.amount, line.advanceType, reimbursedById]
         );
       }
       if (mirror) {
@@ -1248,12 +1258,13 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
         );
       }
       if (counterpartId !== null) {
-        // Amount and date follow; the other side keeps its own category, account and label.
-        await db.runAsync('UPDATE transactions SET operation_date = ?, amount = ? WHERE id = ?', [
-          fields.operationDate,
-          -fields.amount,
-          counterpartId,
-        ]);
+        // Account, date and amount follow; the other side keeps its own category and label.
+        await db.runAsync(
+          `UPDATE transactions SET account_id = ?, operation_date = ?, amount = ?,
+             importance = CASE WHEN ? < 0 THEN COALESCE(importance, 'essentiel') END
+           WHERE id = ?`,
+          [fields.accountId, fields.operationDate, -fields.amount, -fields.amount, counterpartId]
+        );
         if (changes.counterpart?.categoryId !== undefined) {
           await db.runAsync('UPDATE transactions SET category_id = ? WHERE id = ?', [
             changes.counterpart.categoryId,
@@ -1627,7 +1638,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     JOIN categories c ON c.id = s.category_id AND c.system_role = 'avance'
     JOIN transactions t ON t.id = s.transaction_id
     JOIN accounts a ON a.id = t.account_id
-    WHERE a.archived = 0 AND s.advance_type = 'en_attente' AND s.reimbursed_by_id IS NULL
+    WHERE a.archived = 0 AND s.amount < 0 AND s.advance_type = 'en_attente' AND s.reimbursed_by_id IS NULL
     UNION ALL
     SELECT NULL, t.id, t.id, t.account_id, a.name, c.name, ABS(t.amount), t.operation_date
     FROM transactions t
@@ -1677,16 +1688,20 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
         ? await db.getFirstAsync<{ amount: number; account_id: number }>(
             `SELECT s.amount, t.account_id
              FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
-             WHERE s.id = ? AND s.reimbursed_by_id IS NULL`,
+             WHERE s.id = ? AND s.advance_type = 'en_attente' AND s.reimbursed_by_id IS NULL`,
             [ref.splitId]
           )
         : await db.getFirstAsync<{ amount: number; account_id: number }>(
-            'SELECT amount, account_id FROM transactions WHERE id = ? AND reimbursed_by_id IS NULL',
+            `SELECT amount, account_id FROM transactions
+             WHERE id = ? AND advance_type = 'en_attente' AND reimbursed_by_id IS NULL`,
             [ref.transactionId]
           );
     if (!advance) return;
     const amount = options.amount ?? Math.abs(advance.amount);
     if (!(amount > 0)) throw new Error('A reimbursement must be greater than zero.');
+    if (options.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(options.date)) {
+      throw new Error('A reimbursement date must be an ISO date.');
+    }
     const accountId = options.accountId ?? advance.account_id;
     if (!(await getAccount(accountId))) throw new Error(`Account ${accountId} does not exist.`);
     const advanceCategoryId = await getSystemCategoryId('avance');

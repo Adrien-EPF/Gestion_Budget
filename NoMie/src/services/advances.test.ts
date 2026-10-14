@@ -163,6 +163,29 @@ describe('dataService — avances et Hors bilan (#45)', () => {
       expect(await dataService.listPendingAdvances()).toHaveLength(1);
     });
 
+    it('keeps a reimbursed portion reimbursed when the operation is edited', async () => {
+      const created = await dataService.createTransaction({
+        accountId: courant,
+        operationDate: '2026-09-11',
+        amount: -50,
+        splits: [
+          { categoryId: food, amount: -20 },
+          { categoryId: advanceCategory, amount: -30, advanceType: 'en_attente' },
+        ],
+      });
+      await dataService.markAdvanceReimbursed((await dataService.listPendingAdvances())[0].ref);
+
+      await dataService.updateTransaction(created.id, { comment: 'Resto' });
+
+      expect(await dataService.listPendingAdvances()).toEqual([]);
+    });
+
+    it('does not reimburse an advance that is settled elsewhere', async () => {
+      const created = await advance(-80, { advanceType: 'reglee_ailleurs' });
+      await dataService.markAdvanceReimbursed({ transactionId: created.id });
+      expect((await dataService.getTransaction(created.id))!.reimbursedById).toBeNull();
+    });
+
     it('does not turn an edited reimbursement into a new pending advance', async () => {
       const created = await advance(-80, { advanceType: 'en_attente' });
       await dataService.markAdvanceReimbursed((await dataService.listPendingAdvances())[0].ref);

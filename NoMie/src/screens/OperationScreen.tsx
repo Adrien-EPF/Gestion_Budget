@@ -157,10 +157,9 @@ function OperationForm({
   const [advanceType, setAdvanceType] = useState<AdvanceType>(existing?.advanceType ?? 'reglee_ailleurs');
   // Null until the user touches the switch: on by default for Impôts, off otherwise.
   const [counterpartChoice, setCounterpartChoice] = useState<boolean | null>(null);
-  const [counterpartCategoryId, setCounterpartCategoryId] = useState<number | null>(
-    counterpart
-      ? counterpart.categoryId
-      : (categories.find((c) => c.name === COUNTERPART_DEFAULT_CATEGORY_NAME)?.id ?? null)
+  // Undefined until the user picks one: then Salaire/Intérêts/Avantages when the counterpart is an income.
+  const [counterpartCategoryChoice, setCounterpartCategoryChoice] = useState<number | null | undefined>(
+    counterpart ? counterpart.categoryId : undefined
   );
 
   const [splitting, setSplitting] = useState(initialSplits.length > 0);
@@ -191,6 +190,12 @@ function OperationForm({
   const categoryName = categories.find((c) => c.id === categoryId)?.name;
   const addCounterpart = canAddCounterpart && (counterpartChoice ?? categoryName === IMPOTS_CATEGORY_NAME);
   const counterpartKind = isExpense ? 'income' : 'expense';
+  const counterpartCategoryId =
+    counterpartCategoryChoice !== undefined
+      ? counterpartCategoryChoice
+      : counterpartKind === 'income'
+        ? (categories.find((c) => c.name === COUNTERPART_DEFAULT_CATEGORY_NAME)?.id ?? null)
+        : null;
   const counterpartCategoryOptions = categories
     .filter(
       (c) =>
@@ -461,7 +466,7 @@ function OperationForm({
               scroll
               options={counterpartCategoryOptions}
               value={counterpartCategoryId}
-              onChange={setCounterpartCategoryId}
+              onChange={setCounterpartCategoryChoice}
             />
           ) : null}
         </View>

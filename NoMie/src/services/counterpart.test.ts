@@ -126,4 +126,21 @@ describe('dataService — fantôme et contrepartie (#46)', () => {
     expect((await dataService.getBalanceTotals()).realBalance).toBe(1000);
     expect((await dataService.getMonthSummary(septembre)).expenses).toBe(40);
   });
+
+  it('follows the Fantôme to another account, and its importance follows the sign', async () => {
+    const livret = (await dataService.createAccount({ name: 'Livret A', initialBalance: 0 })).id;
+    const tax = await withholding({ counterpart: {} });
+
+    await dataService.updateTransaction(tax.id, { accountId: livret, amount: 250 });
+
+    const other = (await dataService.getTransaction(tax.counterpartTransactionId!))!;
+    expect(other).toMatchObject({ accountId: livret, amount: -250, importance: 'essentiel' });
+    await dataService.updateTransaction(tax.id, { amount: -250 });
+    expect((await dataService.getTransaction(tax.counterpartTransactionId!))!.importance).toBeNull();
+  });
+
+  it('leaves the category empty for an expense counterpart rather than a salary one', async () => {
+    const income = await withholding({ amount: 250, categoryId: salary, counterpart: {} });
+    expect((await dataService.getTransaction(income.counterpartTransactionId!))!.categoryId).toBeNull();
+  });
 });
