@@ -10,7 +10,7 @@ const STATUS_COLORS: Record<TransactionStatus, { fg: string; bg: string }> = {
   non_pointe: { fg: colors.statusNonPointe, bg: colors.statusNonPointeSoft },
   pointe: { fg: colors.statusPointe, bg: colors.statusPointeSoft },
   prevision: { fg: colors.statusPrevision, bg: colors.statusPrevisionSoft },
-  flux_comptable: { fg: colors.statusFlux, bg: colors.statusFluxSoft },
+  fantome: { fg: colors.statusFlux, bg: colors.statusFluxSoft },
 };
 
 /** Status is coded by tint + soft background, never by a warning icon (DESIGN.md). */

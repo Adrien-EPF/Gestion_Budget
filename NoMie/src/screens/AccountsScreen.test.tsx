@@ -112,12 +112,12 @@ describe('Écran Comptes', () => {
       expect(screen.getByTestId('accounts-total-real').props.children).toBe(formatAmount(935.68));
     });
 
-    it('does not list Pointé, Prévision or Flux comptable operations', async () => {
+    it('does not list Pointé, Prévision or Fantôme operations', async () => {
       const courant = await seedAccount(app.dataService, 'Compte courant', 0);
       for (const [status, comment] of [
         ['pointe', 'Déjà pointé'],
         ['prevision', 'Salaire prévu'],
-        ['flux_comptable', 'Vers Livret'],
+        ['fantome', 'Vers Livret'],
       ] as const) {
         await seedTransaction(app.dataService, {
           accountId: courant,
@@ -142,7 +142,7 @@ describe('Écran Comptes', () => {
         operationDate: today,
         amount: -28.5,
         comment: 'Le Comptoir',
-        splits: [{ amount: -14.25 }, { amount: -14.25, advanced: true }],
+        splits: [{ amount: -14.25 }, { categoryId: (await app.dataService.listCategories()).find((c) => c.name === 'Avancé')!.id, amount: -14.25 }],
       });
       await openAccounts();
 

@@ -9,7 +9,7 @@ export function AppDataServiceProvider({ children }: { children: React.ReactNode
 
   useEffect(() => {
     let cancelled = false;
-    openExpoSqliteDatabase('nomie.db')
+    openExpoSqliteDatabase('nomie-v2.db')
       .then(createDataService)
       .then(async (service) => {
         await service.initialize();

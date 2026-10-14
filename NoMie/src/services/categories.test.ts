@@ -38,13 +38,13 @@ describe('dataService — gestion des catégories (#21, #26)', () => {
       expect(created.color).toBe('#DCE7F3');
     });
 
-    it('is unlimited: several custom categories can coexist with the 27 defaults', async () => {
+    it('is unlimited: several custom categories can coexist with the 28 defaults', async () => {
       await dataService.createCategory({ name: 'Un', kind: 'expense' });
       await dataService.createCategory({ name: 'Deux', kind: 'income' });
       await dataService.createCategory({ name: 'Trois', kind: 'both' });
 
       const categories = await dataService.listCategories();
-      expect(categories).toHaveLength(30);
+      expect(categories).toHaveLength(31);
     });
 
     it('refuses a blank name and creates nothing', async () => {

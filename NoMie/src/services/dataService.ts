@@ -23,11 +23,15 @@ import {
   type RecurrenceFrequency,
 } from '../utils/recurrence';
 import { FREQUENCY_LABELS } from '../utils/recurrenceCopy';
+import { IMPORTANCE_LABELS, ADVANCE_TYPE_LABELS } from '../utils/importanceCopy';
 import { STATUS_LABELS } from '../utils/statusCopy';
 
 export type { RecurrenceFrequency };
 
 export type CategoryKind = 'expense' | 'income' | 'both';
+
+/** What a system category stands for; it replaces detection by name and protects the category from being hidden. */
+export type CategorySystemRole = 'virement' | 'avance';
 
 export interface Category {
   id: number;
@@ -37,6 +41,7 @@ export interface Category {
   color: string | null;
   hidden: boolean;
   order: number;
+  systemRole: CategorySystemRole | null;
 }
 
 export interface NewCategory {
@@ -69,17 +74,31 @@ export interface Account {
   initialBalance: number;
   createdAt: string;
   archived: boolean;
+  /** Savings account: the transfers that enter or leave it make the « épargne versée ». */
+  isSavings: boolean;
 }
 
-export type TransactionStatus = 'non_pointe' | 'pointe' | 'prevision' | 'flux_comptable';
+/**
+ * Fantôme is an accounting-only entry: in the bilan, never in a balance
+ * (ADR 0004, which replaces V1's Flux comptable).
+ */
+export type TransactionStatus = 'non_pointe' | 'pointe' | 'prevision' | 'fantome';
+
+/** How much an expense matters, independently of its category. */
+export type Importance = 'essentiel' | 'secondaire_important' | 'secondaire_superflu' | 'exceptionnel';
+
+/** An advance is settled elsewhere (Tricount) or waits to be paid back. */
+export type AdvanceType = 'reglee_ailleurs' | 'en_attente';
 
 /** One portion of a transaction's répartition. */
 export interface SplitLine {
   categoryId: number | null;
   /** Signed like the transaction it belongs to. */
   amount: number;
-  /** Money advanced for someone else, waiting to be paid back. */
+  /** In the Avancé category: money advanced for someone else. */
   advanced: boolean;
+  /** Set on an Avancé portion only. */
+  advanceType: AdvanceType | null;
 }
 
 /**
@@ -90,7 +109,8 @@ export interface NewSplitLine {
   categoryId?: number | null;
   amount?: number;
   percent?: number;
-  advanced?: boolean;
+  /** Only meaningful in the Avancé category; defaults to `en_attente`. */
+  advanceType?: AdvanceType;
 }
 
 interface TransactionFields {
@@ -108,6 +128,16 @@ interface TransactionFields {
   mirrorTransactionId: number | null;
   /** The recurrence rule that generated it, when it is an occurrence. */
   recurrenceRuleId: number | null;
+  /** Null on an income and on a Hors bilan operation. */
+  importance: Importance | null;
+  /** Trésorerie only: counts in the balances, not in the bilan. */
+  offBalance: boolean;
+  /** The other Fantôme of a pair (a charge withheld at source and its offset). */
+  counterpartTransactionId: number | null;
+  /** Set on an operation in the Avancé category. */
+  advanceType: AdvanceType | null;
+  /** The income that paid this advance back. */
+  reimbursedById: number | null;
 }
 
 export interface Transaction extends TransactionFields {
@@ -133,6 +163,15 @@ export interface NewTransaction {
   categoryId?: number | null;
   /** Defaults to Non Pointé, the status of anything freshly entered by hand. */
   status?: TransactionStatus;
+  /** Defaults to Essentiel on an expense that counts in the bilan; ignored otherwise. */
+  importance?: Importance;
+  /**
+   * Out of the bilan, in the balances. Always on for the Avancé category
+   * and for inter-account movements; refused on a Fantôme.
+   */
+  offBalance?: boolean;
+  /** For an operation in the Avancé category; defaults to `en_attente`. */
+  advanceType?: AdvanceType;
   /**
    * Répartition over several categories. The portions must add up to
    * `amount` (or to 100 %) — checked before anything is written.
@@ -374,6 +413,7 @@ interface CategoryRow {
   color: string | null;
   hidden: number;
   sort_order: number;
+  system_role: CategorySystemRole | null;
 }
 
 interface AccountRow {
@@ -382,6 +422,7 @@ interface AccountRow {
   initial_balance: number;
   created_at: string;
   archived: number;
+  is_savings: number;
 }
 
 interface TransactionRow {
@@ -395,6 +436,11 @@ interface TransactionRow {
   status: TransactionStatus;
   mirror_transaction_id: number | null;
   recurrence_rule_id: number | null;
+  importance: Importance | null;
+  off_balance: number;
+  counterpart_transaction_id: number | null;
+  advance_type: AdvanceType | null;
+  reimbursed_by_id: number | null;
 }
 
 interface TransactionListRow extends TransactionRow {
@@ -407,12 +453,17 @@ interface TransactionListRow extends TransactionRow {
 interface SplitRow {
   category_id: number | null;
   amount: number;
-  advanced: number;
+  advance_type: AdvanceType | null;
+  /** 1 when the portion's category is Avancé. */
+  advanced: number | null;
 }
 
-interface FullSplitRow extends SplitRow {
+interface FullSplitRow {
   id: number;
   transaction_id: number;
+  category_id: number | null;
+  amount: number;
+  advance_type: AdvanceType | null;
 }
 
 interface BudgetRow {
@@ -458,6 +509,7 @@ function toCategory(row: CategoryRow): Category {
     color: row.color,
     hidden: row.hidden === 1,
     order: row.sort_order,
+    systemRole: row.system_role,
   };
 }
 
@@ -468,6 +520,7 @@ function toAccount(row: AccountRow): Account {
     initialBalance: row.initial_balance,
     createdAt: row.created_at,
     archived: row.archived === 1,
+    isSavings: row.is_savings === 1,
   };
 }
 
@@ -483,6 +536,11 @@ function toTransactionFields(row: TransactionRow): TransactionFields {
     status: row.status,
     mirrorTransactionId: row.mirror_transaction_id,
     recurrenceRuleId: row.recurrence_rule_id,
+    importance: row.importance,
+    offBalance: row.off_balance === 1,
+    counterpartTransactionId: row.counterpart_transaction_id,
+    advanceType: row.advance_type,
+    reimbursedById: row.reimbursed_by_id,
   };
 }
 
@@ -512,7 +570,12 @@ function toTransactionListItem(row: TransactionListRow): TransactionListItem {
 }
 
 function toSplitLine(row: SplitRow): SplitLine {
-  return { categoryId: row.category_id, amount: row.amount, advanced: row.advanced === 1 };
+  return {
+    categoryId: row.category_id,
+    amount: row.amount,
+    advanced: row.advanced === 1,
+    advanceType: row.advance_type,
+  };
 }
 
 const pad2 = (n: number) => String(n).padStart(2, '0');
@@ -548,7 +611,11 @@ const toCents = (value: number) => Math.round(value * 100);
  * split rule up front: the parts always add up to the total, or nothing
  * is written (#3 « Split »).
  */
-function resolveSplits(total: number, lines: NewSplitLine[]): SplitLine[] {
+function resolveSplits(
+  total: number,
+  lines: NewSplitLine[],
+  advanceCategoryId: number | null
+): SplitLine[] {
   if (lines.length === 0) return [];
 
   for (const line of lines) {
@@ -581,7 +648,11 @@ function resolveSplits(total: number, lines: NewSplitLine[]): SplitLine[] {
   return lines.map((line, i) => ({
     categoryId: line.categoryId ?? null,
     amount: amounts[i],
-    advanced: line.advanced ?? false,
+    advanced: advanceCategoryId !== null && line.categoryId === advanceCategoryId,
+    advanceType:
+      advanceCategoryId !== null && line.categoryId === advanceCategoryId
+        ? (line.advanceType ?? 'en_attente')
+        : null,
   }));
 }
 
@@ -606,10 +677,32 @@ function yearBounds(year: number): [string, string] {
 const LIST_SELECT = `
   SELECT t.*, a.name AS account_name, c.name AS category_name, c.icon AS category_icon,
     COALESCE((SELECT SUM(ABS(s.amount)) FROM transaction_splits s
-              WHERE s.transaction_id = t.id AND s.advanced = 1), 0) AS advanced_amount
+              JOIN categories sc ON sc.id = s.category_id
+              WHERE s.transaction_id = t.id AND sc.system_role = 'avance'), 0) AS advanced_amount
   FROM transactions t
   JOIN accounts a ON a.id = t.account_id
   LEFT JOIN categories c ON c.id = t.category_id`;
+
+const BILAN_STATUSES = `t.status IN ('non_pointe', 'pointe', 'fantome')`;
+
+/**
+ * The parts the bilan comptable is made of (ADR 0004): each part of a split
+ * operation, or the operation itself when it isn't split. Fantôme counts,
+ * Prévision doesn't; Hors bilan operations and Avancé portions are left out.
+ * Columns: account_id, operation_date, category_id, amount.
+ */
+const BILAN_PARTS = `
+  SELECT t.account_id AS account_id, t.operation_date AS operation_date,
+    t.category_id AS category_id, t.amount AS amount
+  FROM transactions t
+  WHERE ${BILAN_STATUSES} AND t.off_balance = 0
+    AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
+  UNION ALL
+  SELECT t.account_id, t.operation_date, s.category_id, s.amount
+  FROM transaction_splits s
+  JOIN transactions t ON t.id = s.transaction_id
+  LEFT JOIN categories sc ON sc.id = s.category_id
+  WHERE ${BILAN_STATUSES} AND t.off_balance = 0 AND COALESCE(sc.system_role, '') <> 'avance'`;
 
 /** Two-letter placeholder initials for a category, per DESIGN.md's circle-with-initials icon placeholder. */
 function deriveInitials(name: string): string {
@@ -658,8 +751,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       for (let i = 0; i < DEFAULT_CATEGORIES.length; i++) {
         const seed = DEFAULT_CATEGORIES[i];
         await db.runAsync(
-          'INSERT INTO categories (name, kind, icon, color, hidden, sort_order) VALUES (?, ?, ?, ?, 0, ?)',
-          [seed.name, seed.kind, deriveInitials(seed.name), null, i + 1]
+          'INSERT INTO categories (name, kind, icon, color, hidden, sort_order, system_role) VALUES (?, ?, ?, ?, 0, ?, ?)',
+          [seed.name, seed.kind, deriveInitials(seed.name), null, i + 1, seed.systemRole ?? null]
         );
       }
     }
@@ -687,7 +780,16 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       [name, input.kind, icon, color, order]
     );
     notifyChange();
-    return { id: result.lastInsertRowId, name, kind: input.kind, icon, color, hidden: false, order };
+    return {
+      id: result.lastInsertRowId,
+      name,
+      kind: input.kind,
+      icon,
+      color,
+      hidden: false,
+      order,
+      systemRole: null,
+    };
   }
 
   /**
@@ -705,6 +807,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     const icon = changes.name !== undefined ? deriveInitials(name) : row.icon;
     const color = changes.color !== undefined ? changes.color : row.color;
     const hidden = changes.hidden !== undefined ? changes.hidden : row.hidden === 1;
+    if (hidden && row.system_role !== null) {
+      throw new Error(`« ${row.name} » is a system category: it cannot be hidden.`);
+    }
 
     await db.runAsync('UPDATE categories SET name = ?, icon = ?, color = ?, hidden = ? WHERE id = ?', [
       name,
@@ -741,11 +846,16 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     return row ? toAccount(row) : null;
   }
 
-  async function createAccount(input: { name: string; initialBalance: number }): Promise<Account> {
+  async function createAccount(input: {
+    name: string;
+    initialBalance: number;
+    isSavings?: boolean;
+  }): Promise<Account> {
     const createdAt = new Date().toISOString();
+    const isSavings = input.isSavings ?? false;
     const result = await db.runAsync(
-      'INSERT INTO accounts (name, initial_balance, created_at, archived) VALUES (?, ?, ?, 0)',
-      [input.name, input.initialBalance, createdAt]
+      'INSERT INTO accounts (name, initial_balance, created_at, archived, is_savings) VALUES (?, ?, ?, 0, ?)',
+      [input.name, input.initialBalance, createdAt, isSavings ? 1 : 0]
     );
     notifyChange();
     return {
@@ -754,7 +864,13 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       initialBalance: input.initialBalance,
       createdAt,
       archived: false,
+      isSavings,
     };
+  }
+
+  async function setAccountSavings(id: number, isSavings: boolean): Promise<void> {
+    await db.runAsync('UPDATE accounts SET is_savings = ? WHERE id = ?', [isSavings ? 1 : 0, id]);
+    notifyChange();
   }
 
   async function renameAccount(id: number, name: string): Promise<void> {
@@ -789,6 +905,11 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
          WHERE mirror_transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)`,
         [id]
       );
+      await db.runAsync(
+        `UPDATE transactions SET counterpart_transaction_id = NULL
+         WHERE counterpart_transaction_id IN (SELECT id FROM transactions WHERE account_id = ?)`,
+        [id]
+      );
       await db.runAsync('DELETE FROM transactions WHERE account_id = ?', [id]);
       await db.runAsync('DELETE FROM recurrence_rules WHERE account_id = ?', [id]);
       await db.runAsync('DELETE FROM accounts WHERE id = ?', [id]);
@@ -808,12 +929,15 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     return row ? toAccount(row) : null;
   }
 
-  async function getTransferCategoryId(): Promise<number | null> {
-    const row = await db.getFirstAsync<{ id: number }>('SELECT id FROM categories WHERE name = ?', [
-      TRANSFER_CATEGORY_NAME,
-    ]);
+  async function getSystemCategoryId(role: CategorySystemRole): Promise<number | null> {
+    const row = await db.getFirstAsync<{ id: number }>(
+      'SELECT id FROM categories WHERE system_role = ?',
+      [role]
+    );
     return row?.id ?? null;
   }
+
+  const getTransferCategoryId = () => getSystemCategoryId('virement');
 
   /**
    * Every rule about what a transaction may look like is checked here,
@@ -821,9 +945,12 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
    * its portions, a transfer's mirror) land in one atomic write.
    */
   async function createTransaction(input: NewTransaction): Promise<Transaction> {
-    const splits = resolveSplits(input.amount, input.splits ?? []);
-    const isTransfer =
-      input.categoryId != null && input.categoryId === (await getTransferCategoryId());
+    const advanceCategoryId = await getSystemCategoryId('avance');
+    const transferCategoryId = await getTransferCategoryId();
+    const splits = resolveSplits(input.amount, input.splits ?? [], advanceCategoryId);
+    const isTransfer = input.categoryId != null && input.categoryId === transferCategoryId;
+    const isAdvance = input.categoryId != null && input.categoryId === advanceCategoryId;
+    const status = input.status ?? 'non_pointe';
 
     if (isTransfer) {
       if (input.transferToAccountId === undefined) {
@@ -838,26 +965,43 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       if (!(await getAccount(input.transferToAccountId))) {
         throw new Error(`Destination account ${input.transferToAccountId} does not exist.`);
       }
+      if (status === 'fantome') {
+        throw new Error('An inter-account movement cannot be a Fantôme.');
+      }
     } else if (input.transferToAccountId !== undefined) {
       throw new Error(`A destination account only goes with « ${TRANSFER_CATEGORY_NAME} ».`);
     }
 
-    const fields: Omit<TransactionFields, 'id' | 'mirrorTransactionId' | 'recurrenceRuleId'> = {
+    // Avancé and inter-account movements are always out of the bilan; elsewhere the box is free.
+    const offBalance = isTransfer || isAdvance || (input.offBalance ?? false);
+    if (status === 'fantome' && offBalance) {
+      throw new Error('A Fantôme cannot be Hors bilan: it would count nowhere.');
+    }
+    const importance = input.amount < 0 && !offBalance ? (input.importance ?? 'essentiel') : null;
+
+    const fields: Omit<
+      TransactionFields,
+      'id' | 'mirrorTransactionId' | 'recurrenceRuleId' | 'counterpartTransactionId' | 'reimbursedById'
+    > = {
       accountId: input.accountId,
       operationDate: input.operationDate,
       bankDate: input.bankDate ?? null,
       comment: input.comment ?? '',
       amount: input.amount,
       categoryId: input.categoryId ?? splits[0]?.categoryId ?? null,
-      status: input.status ?? 'non_pointe',
+      status,
+      importance,
+      offBalance,
+      advanceType: isAdvance ? (input.advanceType ?? 'en_attente') : null,
     };
 
     const insert = async (values: typeof fields) =>
       (
         await db.runAsync(
           `INSERT INTO transactions
-             (account_id, operation_date, bank_date, comment, amount, category_id, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+             (account_id, operation_date, bank_date, comment, amount, category_id, status,
+              importance, off_balance, advance_type)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             values.accountId,
             values.operationDate,
@@ -866,6 +1010,9 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
             values.amount,
             values.categoryId,
             values.status,
+            values.importance,
+            values.offBalance ? 1 : 0,
+            values.advanceType,
           ]
         )
       ).lastInsertRowId;
@@ -876,8 +1023,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       id = await insert(fields);
       for (const line of splits) {
         await db.runAsync(
-          'INSERT INTO transaction_splits (transaction_id, category_id, amount, advanced) VALUES (?, ?, ?, ?)',
-          [id, line.categoryId, line.amount, line.advanced ? 1 : 0]
+          'INSERT INTO transaction_splits (transaction_id, category_id, amount, advance_type) VALUES (?, ?, ?, ?)',
+          [id, line.categoryId, line.amount, line.advanceType]
         );
       }
       if (isTransfer) {
@@ -885,6 +1032,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
           ...fields,
           accountId: input.transferToAccountId as number,
           amount: -input.amount,
+          importance: null,
         });
         await db.runAsync('UPDATE transactions SET mirror_transaction_id = ? WHERE id = ?', [
           mirrorTransactionId,
@@ -897,7 +1045,15 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       }
     });
     notifyChange();
-    return { id, ...fields, mirrorTransactionId, recurrenceRuleId: null, splits };
+    return {
+      id,
+      ...fields,
+      mirrorTransactionId,
+      recurrenceRuleId: null,
+      counterpartTransactionId: null,
+      reimbursedById: null,
+      splits,
+    };
   }
 
   async function getTransaction(id: number): Promise<Transaction | null> {
@@ -906,15 +1062,17 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     ]);
     if (!row) return null;
     const splitRows = await db.getAllAsync<SplitRow>(
-      'SELECT category_id, amount, advanced FROM transaction_splits WHERE transaction_id = ? ORDER BY id ASC',
+      `SELECT s.category_id, s.amount, s.advance_type, (c.system_role = 'avance') AS advanced
+       FROM transaction_splits s LEFT JOIN categories c ON c.id = s.category_id
+       WHERE s.transaction_id = ? ORDER BY s.id ASC`,
       [id]
     );
     return { ...toTransactionFields(row), splits: splitRows.map(toSplitLine) };
   }
 
   /**
-   * Pointage only moves between Non Pointé and Pointé. Prévision and Flux
-   * comptable are left untouched (handoff §7), which is why this is a
+   * Pointage only moves between Non Pointé and Pointé. Prévision and Fantôme
+   * are left untouched (handoff §7), which is why this is a
    * conditional UPDATE rather than a read-then-write: it stays correct
    * when a row is tapped twice in quick succession.
    */
@@ -967,14 +1125,14 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
    * Balances are computed in SQL, not folded in memory by the UI, so they
    * stay cheap with years of history (#3 story 63).
    *  - pointé = initial balance + Σ Pointé
-   *  - réel   = initial balance + Σ everything except Flux comptable
+   *  - réel   = initial balance + Σ everything except Fantôme (ADR 0004)
    */
   async function listAccountSummaries(month: MonthRef): Promise<AccountSummary[]> {
     const [start, end] = monthBounds(month);
     const rows = await db.getAllAsync<AccountSummaryRow>(
       `SELECT a.*,
          a.initial_balance
-           + COALESCE(SUM(CASE WHEN t.status <> 'flux_comptable' THEN t.amount END), 0) AS real_balance,
+           + COALESCE(SUM(CASE WHEN t.status <> 'fantome' THEN t.amount END), 0) AS real_balance,
          a.initial_balance
            + COALESCE(SUM(CASE WHEN t.status = 'pointe' THEN t.amount END), 0) AS pointed_balance,
          COUNT(CASE WHEN t.operation_date >= ? AND t.operation_date < ? THEN 1 END) AS month_count
@@ -1001,17 +1159,17 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     };
   }
 
-  /** Dépenses / recettes of the month: real activity only, so no Flux comptable and no Prévision. */
+  /** Dépenses / recettes of the month: the bilan comptable's rules (`BILAN_PARTS`). */
   async function getMonthSummary(month: MonthRef): Promise<MonthSummary> {
     const [start, end] = monthBounds(month);
     const range = 'a.archived = 0 AND t.operation_date >= ? AND t.operation_date < ?';
 
     const totals = await db.getFirstAsync<{ expenses: number | null; income: number | null }>(
       `SELECT
-         SUM(CASE WHEN t.amount < 0 THEN -t.amount END) AS expenses,
-         SUM(CASE WHEN t.amount > 0 THEN t.amount END) AS income
-       FROM transactions t JOIN accounts a ON a.id = t.account_id
-       WHERE ${range} AND t.status IN ('non_pointe', 'pointe')`,
+         SUM(CASE WHEN p.amount < 0 THEN -p.amount END) AS expenses,
+         SUM(CASE WHEN p.amount > 0 THEN p.amount END) AS income
+       FROM (${BILAN_PARTS}) p JOIN accounts a ON a.id = p.account_id
+       WHERE a.archived = 0 AND p.operation_date >= ? AND p.operation_date < ?`,
       [start, end]
     );
     const forecasts = await db.getAllAsync<{ comment: string; operation_date: string }>(
@@ -1062,16 +1220,14 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
   /**
    * Dépenses / recettes of `year`, per category and per month (#25) — the
-   * Bilan sheet of the old Excel. Real activity only, like the month
-   * summary, but on every account: archiving an account later doesn't
+   * Bilan sheet of the old Excel. The bilan comptable's rules, like the
+   * month summary, but on every account: archiving an account later doesn't
    * rewrite the past years' Bilan. A split transaction counts through
    * its portions' categories, an unsplit one through its own. Categories
    * without activity that year are left out; operations without a
    * category come last, under a `null` name.
    */
   async function getCategoryFlowsByMonth(year: number): Promise<CategoryYearFlow[]> {
-    const activity = `t.status IN ('non_pointe', 'pointe')
-                      AND t.operation_date >= ? AND t.operation_date < ?`;
     const range = yearBounds(year);
     const rows = await db.getAllAsync<{
       category_id: number | null;
@@ -1084,20 +1240,14 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
          SUM(CASE WHEN p.amount < 0 THEN -p.amount END) AS expenses,
          SUM(CASE WHEN p.amount > 0 THEN p.amount END) AS income
        FROM (
-         SELECT t.category_id, substr(t.operation_date, 6, 2) AS month, t.amount
-         FROM transactions t
-         WHERE ${activity}
-           AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
-         UNION ALL
-         SELECT s.category_id, substr(t.operation_date, 6, 2) AS month, s.amount
-         FROM transaction_splits s
-         JOIN transactions t ON t.id = s.transaction_id
-         WHERE ${activity}
+         SELECT category_id, substr(operation_date, 6, 2) AS month, amount
+         FROM (${BILAN_PARTS})
+         WHERE operation_date >= ? AND operation_date < ?
        ) p
        LEFT JOIN categories c ON c.id = p.category_id
        GROUP BY p.category_id, p.month
        ORDER BY c.sort_order IS NULL, c.sort_order ASC`,
-      [...range, ...range]
+      range
     );
 
     const flows = new Map<number | null, CategoryYearFlow>();
@@ -1178,7 +1328,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     >(
       `SELECT a.*,
          CASE WHEN t.operation_date < ? THEN NULL ELSE substr(t.operation_date, 6, 2) END AS month,
-         SUM(CASE WHEN t.status <> 'flux_comptable' THEN t.amount END) AS real,
+         SUM(CASE WHEN t.status <> 'fantome' THEN t.amount END) AS real,
          SUM(CASE WHEN t.status = 'pointe' THEN t.amount END) AS pointed,
          COUNT(t.id) AS count
        FROM accounts a
@@ -1233,16 +1383,18 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
   /**
    * Advanced portions waiting to be paid back, over active accounts.
-   * Reimbursed portions (`reimbursed_at` set, #21) drop out as soon as
+   * Reimbursed portions (`reimbursed_by_id` set) drop out as soon as
    * they're marked, here and on the dedicated Avances en attente screen.
    */
   async function getPendingAdvances(): Promise<PendingAdvances> {
     const row = await db.getFirstAsync<{ count: number; total: number | null }>(
       `SELECT COUNT(*) AS count, SUM(ABS(s.amount)) AS total
        FROM transaction_splits s
+       JOIN categories sc ON sc.id = s.category_id
        JOIN transactions t ON t.id = s.transaction_id
        JOIN accounts a ON a.id = t.account_id
-       WHERE a.archived = 0 AND s.advanced = 1 AND s.reimbursed_at IS NULL`
+       WHERE a.archived = 0 AND sc.system_role = 'avance' AND s.advance_type = 'en_attente'
+         AND s.reimbursed_by_id IS NULL`
     );
     return { count: row?.count ?? 0, total: roundToCents(row?.total ?? 0) };
   }
@@ -1259,10 +1411,12 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       `SELECT s.id AS split_id, a.name AS account_name, c.name AS category_name,
          ABS(s.amount) AS amount, t.operation_date AS operation_date
        FROM transaction_splits s
+       JOIN categories sc ON sc.id = s.category_id
        JOIN transactions t ON t.id = s.transaction_id
        JOIN accounts a ON a.id = t.account_id
        LEFT JOIN categories c ON c.id = s.category_id
-       WHERE a.archived = 0 AND s.advanced = 1 AND s.reimbursed_at IS NULL
+       WHERE a.archived = 0 AND sc.system_role = 'avance' AND s.advance_type = 'en_attente'
+         AND s.reimbursed_by_id IS NULL
        ORDER BY t.operation_date DESC, s.id DESC`
     );
     return rows.map((row) => ({
@@ -1274,9 +1428,31 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     }));
   }
 
-  /** Marks one portion paid back, dated today; it leaves the pending list for good (#21, out of scope: undo). */
+  /**
+   * Pays one portion back: records the income received (same account, today, the
+   * advanced amount), out of the bilan, and links the portion to it so it leaves the
+   * pending list for good. The reimbursement sheet with editable fields is a later ticket.
+   */
   async function markAdvanceReimbursed(splitId: number): Promise<void> {
-    await db.runAsync('UPDATE transaction_splits SET reimbursed_at = ? WHERE id = ?', [today(), splitId]);
+    const split = await db.getFirstAsync<{ amount: number; account_id: number; category_id: number | null }>(
+      `SELECT s.amount, t.account_id, s.category_id
+       FROM transaction_splits s JOIN transactions t ON t.id = s.transaction_id
+       WHERE s.id = ? AND s.reimbursed_by_id IS NULL`,
+      [splitId]
+    );
+    if (!split) return;
+    await db.transactionAsync(async () => {
+      const received = await db.runAsync(
+        `INSERT INTO transactions
+           (account_id, operation_date, bank_date, comment, amount, category_id, status, off_balance)
+         VALUES (?, ?, NULL, 'Remboursement', ?, ?, 'non_pointe', 1)`,
+        [split.account_id, today(), Math.abs(split.amount), split.category_id]
+      );
+      await db.runAsync('UPDATE transaction_splits SET reimbursed_by_id = ? WHERE id = ?', [
+        received.lastInsertRowId,
+        splitId,
+      ]);
+    });
     notifyChange();
   }
 
@@ -1285,7 +1461,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     const rows = await db.getAllAsync<CategoryRow>(
       `SELECT * FROM categories
        WHERE hidden = 0 AND kind IN ('expense', 'both')
-         AND id NOT IN (SELECT category_id FROM budgets)
+         AND id NOT IN (SELECT category_id FROM budgets WHERE category_id IS NOT NULL)
        ORDER BY sort_order ASC`
     );
     return rows.map(toCategory);
@@ -1328,8 +1504,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
   /**
    * Net spend of one category per month on `[from, to)`, as `YYYY-MM` -> amount.
-   * Real activity only — Non Pointé and Pointé, like the month summary — on
-   * active accounts. A split transaction counts through its portions'
+   * The bilan comptable's rules, like the month summary, on active accounts. A split transaction counts through its portions'
    * categories, an unsplit one through its own; a refund offsets spending.
    */
   async function getCategorySpendByMonth(
@@ -1337,22 +1512,12 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     from: string,
     to: string
   ): Promise<Map<string, number>> {
-    const real = `a.archived = 0 AND t.status IN ('non_pointe', 'pointe')
-                  AND t.operation_date >= ? AND t.operation_date < ?`;
     const rows = await db.getAllAsync<{ ym: string; net: number }>(
-      `SELECT ym, SUM(amount) AS net FROM (
-         SELECT substr(t.operation_date, 1, 7) AS ym, t.amount AS amount
-         FROM transactions t JOIN accounts a ON a.id = t.account_id
-         WHERE ${real} AND t.category_id = ?
-           AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = t.id)
-         UNION ALL
-         SELECT substr(t.operation_date, 1, 7) AS ym, s.amount AS amount
-         FROM transaction_splits s
-         JOIN transactions t ON t.id = s.transaction_id
-         JOIN accounts a ON a.id = t.account_id
-         WHERE ${real} AND s.category_id = ?
-       ) GROUP BY ym`,
-      [from, to, categoryId, from, to, categoryId]
+      `SELECT substr(p.operation_date, 1, 7) AS ym, SUM(p.amount) AS net
+       FROM (${BILAN_PARTS}) p JOIN accounts a ON a.id = p.account_id
+       WHERE a.archived = 0 AND p.operation_date >= ? AND p.operation_date < ? AND p.category_id = ?
+       GROUP BY ym`,
+      [from, to, categoryId]
     );
     return new Map(rows.map((row) => [row.ym, Math.max(0, roundToCents(-row.net))]));
   }
@@ -1492,6 +1657,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
        ORDER BY r.id ASC`
     );
     const horizon = generationHorizon();
+    const advanceCategoryId = await getSystemCategoryId('avance');
     let created = 0;
 
     for (const row of rules) {
@@ -1500,13 +1666,25 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       const dates = occurrencesBetween(row.reference_date, row.frequency, from, horizon).filter(
         (date) => !row.end_date || date <= row.end_date
       );
+      const isAdvance = row.category_id !== null && row.category_id === advanceCategoryId;
       await db.transactionAsync(async () => {
         for (const date of dates) {
           await db.runAsync(
             `INSERT INTO transactions
-               (account_id, operation_date, bank_date, comment, amount, category_id, status, recurrence_rule_id)
-             VALUES (?, ?, NULL, ?, ?, ?, 'prevision', ?)`,
-            [row.account_id, date, row.name, row.amount, row.category_id, row.id]
+               (account_id, operation_date, bank_date, comment, amount, category_id, status,
+                recurrence_rule_id, importance, off_balance, advance_type)
+             VALUES (?, ?, NULL, ?, ?, ?, 'prevision', ?, ?, ?, ?)`,
+            [
+              row.account_id,
+              date,
+              row.name,
+              row.amount,
+              row.category_id,
+              row.id,
+              row.amount < 0 && !isAdvance ? 'essentiel' : null,
+              isAdvance ? 1 : 0,
+              isAdvance ? 'en_attente' : null,
+            ]
           );
         }
         await db.runAsync('UPDATE recurrence_rules SET generated_until = ? WHERE id = ?', [
@@ -1704,21 +1882,23 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
       for (const row of data.accounts) {
         await db.runAsync(
-          'INSERT INTO accounts (id, name, initial_balance, created_at, archived) VALUES (?, ?, ?, ?, ?)',
-          [row.id, row.name, row.initial_balance, row.created_at, row.archived]
+          'INSERT INTO accounts (id, name, initial_balance, created_at, archived, is_savings) VALUES (?, ?, ?, ?, ?, ?)',
+          [row.id, row.name, row.initial_balance, row.created_at, row.archived, row.is_savings]
         );
       }
       for (const row of data.categories) {
         await db.runAsync(
-          'INSERT INTO categories (id, name, kind, icon, color, hidden, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-          [row.id, row.name, row.kind, row.icon, row.color, row.hidden, row.sort_order]
+          'INSERT INTO categories (id, name, kind, icon, color, hidden, sort_order, system_role) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [row.id, row.name, row.kind, row.icon, row.color, row.hidden, row.sort_order, row.system_role]
         );
       }
       for (const row of data.transactions) {
         await db.runAsync(
           `INSERT INTO transactions
-             (id, account_id, operation_date, bank_date, comment, amount, category_id, status, mirror_transaction_id, recurrence_rule_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, account_id, operation_date, bank_date, comment, amount, category_id, status,
+              mirror_transaction_id, recurrence_rule_id, importance, off_balance,
+              counterpart_transaction_id, advance_type, reimbursed_by_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             row.id,
             row.account_id,
@@ -1730,21 +1910,26 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
             row.status,
             row.mirror_transaction_id,
             row.recurrence_rule_id,
+            row.importance,
+            row.off_balance,
+            row.counterpart_transaction_id,
+            row.advance_type,
+            row.reimbursed_by_id,
           ]
         );
       }
       for (const row of data.transactionSplits) {
         await db.runAsync(
           `INSERT INTO transaction_splits
-             (id, transaction_id, category_id, amount, advanced, reimbursed_at)
+             (id, transaction_id, category_id, amount, advance_type, reimbursed_by_id)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [row.id, row.transaction_id, row.category_id, row.amount, row.advanced, row.reimbursed_at ?? null]
+          [row.id, row.transaction_id, row.category_id, row.amount, row.advance_type, row.reimbursed_by_id]
         );
       }
       for (const row of data.budgets) {
         await db.runAsync(
-          'INSERT INTO budgets (id, category_id, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?, ?)',
-          [row.id, row.category_id, row.amount, row.period, row.carry_over, row.start_month]
+          'INSERT INTO budgets (id, category_id, importance, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?, ?, ?)',
+          [row.id, row.category_id, row.importance, row.amount, row.period, row.carry_over, row.start_month]
         );
       }
       for (const row of data.recurrenceRules) {
@@ -1795,13 +1980,14 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     const categoryName = new Map(categories.map((c) => [c.id, c.name]));
 
     const accountsCsv = buildCsv(
-      ['Id', 'Nom', 'Solde initial', 'Créé le', 'Archivé'],
+      ['Id', 'Nom', 'Solde initial', 'Créé le', 'Archivé', 'Compte épargne'],
       accounts.map((a) => [
         String(a.id),
         a.name,
         formatCsvAmount(a.initialBalance),
         a.createdAt.slice(0, 10),
         csvBool(a.archived),
+        csvBool(a.isSavings),
       ])
     );
 
@@ -1811,7 +1997,19 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     );
 
     const transactionsCsv = buildCsv(
-      ['Id', 'Compte', 'Date opération', 'Date banque', 'Commentaire', 'Montant', 'Catégorie', 'Statut'],
+      [
+        'Id',
+        'Compte',
+        'Date opération',
+        'Date banque',
+        'Libellé',
+        'Montant',
+        'Catégorie',
+        'Statut',
+        'Importance',
+        'Hors bilan',
+        'Avance',
+      ],
       transactions.map((t) => [
         String(t.id),
         accountName.get(t.account_id) ?? '',
@@ -1821,17 +2019,20 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
         formatCsvAmount(t.amount),
         t.category_id !== null ? (categoryName.get(t.category_id) ?? '') : '',
         STATUS_LABELS[t.status],
+        t.importance ? IMPORTANCE_LABELS[t.importance] : '',
+        csvBool(t.off_balance === 1),
+        t.advance_type ? ADVANCE_TYPE_LABELS[t.advance_type] : '',
       ])
     );
 
     const splitsCsv = buildCsv(
-      ['Id', 'Opération', 'Catégorie', 'Montant', 'Avancé'],
+      ['Id', 'Opération', 'Catégorie', 'Montant', 'Avance'],
       splits.map((s) => [
         String(s.id),
         String(s.transaction_id),
         s.category_id !== null ? (categoryName.get(s.category_id) ?? '') : '',
         formatCsvAmount(s.amount),
-        csvBool(s.advanced === 1),
+        s.advance_type ? ADVANCE_TYPE_LABELS[s.advance_type] : '',
       ])
     );
 
@@ -1909,6 +2110,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     listAccounts,
     getAccount,
     createAccount,
+    setAccountSavings,
     renameAccount,
     archiveAccount,
     updateInitialBalance,

@@ -403,13 +403,13 @@ describe('Écran Réglages', () => {
           accountId: main.id,
           operationDate: '2026-09-10',
           amount: -64.5,
-          splits: [{ amount: -64.5, advanced: true }],
+          splits: [{ categoryId: (await app.dataService.listCategories()).find((c) => c.name === 'Avancé')!.id, amount: -64.5 }],
         });
       });
       await openSettings();
 
       expect(screen.getByText('2 actifs · 1 archivé')).toBeTruthy();
-      expect(screen.getByText('27 catégories · ordre et couleurs')).toBeTruthy();
+      expect(screen.getByText('28 catégories · ordre et couleurs')).toBeTruthy();
       expect(screen.getByText(plain(`1 portion · ${formatAmount(64.5)}`))).toBeTruthy();
     });
 
@@ -464,7 +464,7 @@ describe('Écran Réglages', () => {
       const [file] = app.fileSharer.shared;
       expect(file.filename).toBe(`nomie-sauvegarde-${todayIso()}.json`);
       expect(file.mimeType).toBe('application/json');
-      expect(JSON.parse(file.content)).toMatchObject({ format: 'nomie-backup', version: 1 });
+      expect(JSON.parse(file.content)).toMatchObject({ format: 'nomie-backup', version: 2 });
       expect(screen.getByTestId('app-bar-title').props.children).toBe('Réglages');
     });
 

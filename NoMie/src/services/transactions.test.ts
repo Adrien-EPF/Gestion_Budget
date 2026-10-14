@@ -47,17 +47,17 @@ describe('dataService — transactions and balances', () => {
     await add(-100, 'pointe');
     await add(-30, 'non_pointe');
     await add(2000, 'prevision');
-    await add(-200, 'flux_comptable');
+    await add(-200, 'fantome');
 
     const [summary] = await dataService.listAccountSummaries(SEPT);
     expect(summary.pointedBalance).toBe(900);
   });
 
-  it('computes the real balance as initial balance + Σ everything except Flux comptable', async () => {
+  it('computes the real balance as initial balance + Σ everything except Fantôme', async () => {
     await add(-100, 'pointe');
     await add(-30, 'non_pointe');
     await add(2000, 'prevision');
-    await add(-200, 'flux_comptable');
+    await add(-200, 'fantome');
 
     const [summary] = await dataService.listAccountSummaries(SEPT);
     expect(summary.realBalance).toBe(2870);
@@ -113,9 +113,9 @@ describe('dataService — transactions and balances', () => {
     expect((await dataService.getTransaction(t.id))?.status).toBe('non_pointe');
   });
 
-  it('never changes the status of a Prévision or a Flux comptable', async () => {
+  it('never changes the status of a Prévision or a Fantôme', async () => {
     const forecast = await add(2380, 'prevision');
-    const flux = await add(-200, 'flux_comptable');
+    const flux = await add(-200, 'fantome');
 
     await dataService.setPointed(forecast.id, true);
     await dataService.setPointed(flux.id, true);
@@ -123,7 +123,7 @@ describe('dataService — transactions and balances', () => {
     await dataService.setPointed(flux.id, false);
 
     expect((await dataService.getTransaction(forecast.id))?.status).toBe('prevision');
-    expect((await dataService.getTransaction(flux.id))?.status).toBe('flux_comptable');
+    expect((await dataService.getTransaction(flux.id))?.status).toBe('fantome');
   });
 
   it('is idempotent when a transaction is marked Pointé twice', async () => {
@@ -188,16 +188,16 @@ describe('dataService — transactions and balances', () => {
     expect(month[0].categoryName).toBeNull();
   });
 
-  it('summarises the month without Flux comptable and without Prévision', async () => {
+  it('summarises the month with its Fantôme and without Prévision', async () => {
     await add(-64.32, 'non_pointe');
     await add(-28.5, 'pointe');
     await add(100, 'pointe');
-    await add(-200, 'flux_comptable');
+    await add(-200, 'fantome');
     await add(2380, 'prevision', '2026-09-30', { comment: 'Salaire' });
     await add(-999, 'pointe', '2026-08-15');
 
     const summary = await dataService.getMonthSummary(SEPT);
-    expect(summary.expenses).toBe(92.82);
+    expect(summary.expenses).toBe(292.82);
     expect(summary.income).toBe(100);
     expect(summary.forecastCount).toBe(1);
     expect(summary.firstForecast).toEqual({ comment: 'Salaire', operationDate: '2026-09-30' });

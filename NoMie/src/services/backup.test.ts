@@ -8,13 +8,14 @@ async function seed(dataService: DataService) {
   const savings = await dataService.createAccount({ name: 'Livret A', initialBalance: 0 });
   const categories = await dataService.listCategories();
   const restaurant = categories.find((c) => c.name === 'Restaurant')!;
+  const avance = categories.find((c) => c.name === 'Avancé')!;
 
   const withAdvance = await dataService.createTransaction({
     accountId: checking.id,
     operationDate: '2026-09-10',
     comment: 'Resto avec ; des ", des\nretours',
     amount: -64.5,
-    splits: [{ categoryId: restaurant.id, amount: -64.5, advanced: true }],
+    splits: [{ categoryId: avance.id, amount: -64.5 }],
   });
 
   const transport = categories.find((c) => c.name === 'Transports autres')!;
@@ -55,7 +56,7 @@ async function seed(dataService: DataService) {
   });
   await dataService.setSetting('roundedKeypad', true);
 
-  return { checking, savings, restaurant, transport, withAdvance, multiSplit, budget, rule };
+  return { checking, savings, restaurant, transport, avance, withAdvance, multiSplit, budget, rule };
 }
 
 describe('dataService — sauvegarde (createBackup / restoreBackup)', () => {
@@ -69,7 +70,7 @@ describe('dataService — sauvegarde (createBackup / restoreBackup)', () => {
   afterEach(() => close());
 
   it('carries every table, ids and links intact', async () => {
-    const { checking, savings, restaurant, transport, withAdvance, multiSplit, budget, rule } =
+    const { checking, savings, restaurant, transport, avance, withAdvance, multiSplit, budget, rule } =
       await seed(dataService);
     const backup = await dataService.createBackup();
 
@@ -78,13 +79,13 @@ describe('dataService — sauvegarde (createBackup / restoreBackup)', () => {
     expect(typeof backup.createdAt).toBe('string');
 
     expect(backup.data.accounts.map((a) => a.id).sort()).toEqual([checking.id, savings.id].sort());
-    expect(backup.data.categories).toHaveLength(27);
+    expect(backup.data.categories).toHaveLength(28);
     expect(backup.data.transactions.length).toBeGreaterThanOrEqual(5); // 4 created + 1 transfer mirror
     expect(backup.data.transactionSplits).toHaveLength(3); // 1 for withAdvance + 2 for multiSplit
     expect(backup.data.transactionSplits[0]).toMatchObject({
       transaction_id: withAdvance.id,
-      category_id: restaurant.id,
-      advanced: 1,
+      category_id: avance.id,
+      advance_type: 'en_attente',
     });
     expect(
       backup.data.transactionSplits.filter((s) => s.transaction_id === multiSplit.id).map((s) => s.category_id)
@@ -298,7 +299,7 @@ describe('dataService — export CSV (exportCsv)', () => {
 
     const transactions = files.find((f) => f.filename === 'transactions.csv')!.content;
     const transactionLines = transactions.replace('﻿', '').trim().split('\r\n');
-    expect(transactionLines[0]).toBe('Id;Compte;Date opération;Date banque;Commentaire;Montant;Catégorie;Statut');
+    expect(transactionLines[0]).toBe('Id;Compte;Date opération;Date banque;Libellé;Montant;Catégorie;Statut;Importance;Hors bilan;Avance');
     // Account and category names replace ids, amount uses a comma, date stays AAAA-MM-JJ, and status is a French label.
     expect(transactionLines.some((line) => line.includes('Compte courant') && line.includes('2026-09-05'))).toBe(
       true
@@ -310,7 +311,7 @@ describe('dataService — export CSV (exportCsv)', () => {
 
     const splits = files.find((f) => f.filename === 'splits.csv')!.content;
     expect(splits).toContain('Restaurant');
-    expect(splits).toContain('Oui'); // advanced
+    expect(splits).toContain('En attente'); // advance type
     // A split transaction lands on multiple CSV rows, one per portion, sharing the same transaction id.
     const splitLines = splits.replace('﻿', '').trim().split('\r\n').slice(1);
     expect(splitLines).toHaveLength(3);
@@ -341,7 +342,7 @@ describe('dataService — export CSV (exportCsv)', () => {
     const files = await dataService.exportCsv();
     const transactions = files.find((f) => f.filename === 'transactions.csv')!.content;
     expect(transactions.replace('﻿', '').trim()).toBe(
-      'Id;Compte;Date opération;Date banque;Commentaire;Montant;Catégorie;Statut'
+      'Id;Compte;Date opération;Date banque;Libellé;Montant;Catégorie;Statut;Importance;Hors bilan;Avance'
     );
   });
 });

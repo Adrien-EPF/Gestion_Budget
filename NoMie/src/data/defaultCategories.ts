@@ -1,15 +1,16 @@
-import type { CategoryKind } from '../services/dataService';
+import type { CategoryKind, CategorySystemRole } from '../services/dataService';
 
-/** The category that makes the service write a transfer's mirror transaction (CONTEXT.md §7). */
+/** Seed name of the category carrying the `virement` role, which makes the service write a transfer's mirror transaction (CONTEXT.md §7). The role, not this name, is what the service looks for. */
 export const TRANSFER_CATEGORY_NAME = 'Mouvement inter-compte';
 
 export interface DefaultCategorySeed {
   name: string;
   kind: CategoryKind;
+  systemRole?: CategorySystemRole;
 }
 
 /**
- * The 27 categories from the old Excel (CONTEXT.md §4), pre-loaded on
+ * The 28 categories from the old Excel (CONTEXT.md §4), pre-loaded on
  * first launch so returning users keep their existing landmarks. `kind`
  * is a best-effort classification (expense/income/both) — the Excel had
  * no such field, categories were used freely on either side.
@@ -26,6 +27,7 @@ export const DEFAULT_CATEGORIES: DefaultCategorySeed[] = [
   { name: 'Habillement', kind: 'expense' },
   { name: 'Santé', kind: 'expense' },
   { name: 'Services', kind: 'expense' },
+  { name: 'Internet/téléphone', kind: 'expense' },
   { name: 'Sorties/bières', kind: 'expense' },
   { name: 'Logement', kind: 'expense' },
   { name: 'Impôts', kind: 'expense' },
@@ -35,10 +37,10 @@ export const DEFAULT_CATEGORIES: DefaultCategorySeed[] = [
   { name: 'Don', kind: 'both' },
   { name: 'Retrait', kind: 'expense' },
   { name: 'Virement', kind: 'both' },
-  { name: TRANSFER_CATEGORY_NAME, kind: 'both' },
+  { name: TRANSFER_CATEGORY_NAME, kind: 'both', systemRole: 'virement' },
   { name: 'Salaire/Intérêts/Avantages', kind: 'income' },
   { name: 'Chèque', kind: 'both' },
-  { name: 'Avancé', kind: 'both' },
+  { name: 'Avancé', kind: 'both', systemRole: 'avance' },
   { name: 'Aide Etat', kind: 'income' },
   { name: 'Vacances', kind: 'expense' },
   { name: 'Autres', kind: 'both' },

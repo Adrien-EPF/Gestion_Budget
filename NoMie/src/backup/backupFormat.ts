@@ -7,7 +7,7 @@
  * survives a round trip.
  */
 export const BACKUP_FORMAT_ID = 'nomie-backup';
-export const BACKUP_FORMAT_VERSION = 1;
+export const BACKUP_FORMAT_VERSION = 2;
 
 export interface BackupAccountRow {
   id: number;
@@ -15,6 +15,7 @@ export interface BackupAccountRow {
   initial_balance: number;
   created_at: string;
   archived: number;
+  is_savings: number;
 }
 
 export interface BackupCategoryRow {
@@ -25,6 +26,7 @@ export interface BackupCategoryRow {
   color: string | null;
   hidden: number;
   sort_order: number;
+  system_role: string | null;
 }
 
 export interface BackupTransactionRow {
@@ -38,6 +40,11 @@ export interface BackupTransactionRow {
   status: string;
   mirror_transaction_id: number | null;
   recurrence_rule_id: number | null;
+  importance: string | null;
+  off_balance: number;
+  counterpart_transaction_id: number | null;
+  advance_type: string | null;
+  reimbursed_by_id: number | null;
 }
 
 export interface BackupSplitRow {
@@ -45,13 +52,14 @@ export interface BackupSplitRow {
   transaction_id: number;
   category_id: number | null;
   amount: number;
-  advanced: number;
-  reimbursed_at: string | null;
+  advance_type: string | null;
+  reimbursed_by_id: number | null;
 }
 
 export interface BackupBudgetRow {
   id: number;
-  category_id: number;
+  category_id: number | null;
+  importance: string | null;
   amount: number;
   period: string;
   carry_over: number;
@@ -133,15 +141,26 @@ function checkReferences(data: BackupData): string | null {
     if (row.recurrence_rule_id !== null && bad(ruleIds.has(row.recurrence_rule_id))) {
       return `Opération ${row.id} : règle de récurrence introuvable.`;
     }
+    if (row.counterpart_transaction_id !== null && bad(transactionIds.has(row.counterpart_transaction_id))) {
+      return `Opération ${row.id} : contrepartie introuvable.`;
+    }
+    if (row.reimbursed_by_id !== null && bad(transactionIds.has(row.reimbursed_by_id))) {
+      return `Opération ${row.id} : remboursement introuvable.`;
+    }
   }
   for (const row of data.transactionSplits) {
     if (bad(transactionIds.has(row.transaction_id))) return `Portion ${row.id} : opération introuvable.`;
     if (row.category_id !== null && bad(categoryIds.has(row.category_id))) {
       return `Portion ${row.id} : catégorie introuvable.`;
     }
+    if (row.reimbursed_by_id !== null && bad(transactionIds.has(row.reimbursed_by_id))) {
+      return `Portion ${row.id} : remboursement introuvable.`;
+    }
   }
   for (const row of data.budgets) {
-    if (bad(categoryIds.has(row.category_id))) return `Budget ${row.id} : catégorie introuvable.`;
+    if (row.category_id !== null && bad(categoryIds.has(row.category_id))) {
+      return `Budget ${row.id} : catégorie introuvable.`;
+    }
   }
   for (const row of data.recurrenceRules) {
     if (bad(accountIds.has(row.account_id))) return `Règle ${row.id} : compte introuvable.`;
@@ -175,6 +194,13 @@ export function parseBackupFile(text: string): BackupValidation {
     return {
       ok: false,
       reason: 'Cette sauvegarde vient d’une version plus récente de NoMie. Mets à jour l’app avant de l’importer.',
+    };
+  }
+  if (parsed.version < BACKUP_FORMAT_VERSION) {
+    return {
+      ok: false,
+      reason:
+        'Cette sauvegarde vient de NoMie V1 : la V2 repart d’une base vide et ne peut pas l’importer.',
     };
   }
   if (parsed.version !== BACKUP_FORMAT_VERSION) {

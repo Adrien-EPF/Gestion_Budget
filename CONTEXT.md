@@ -57,16 +57,17 @@ Cas d'usage clés : saisie rapide d'une opération, pointage/rapprochement banca
 
 Au lieu de 12 feuilles mensuelles, chaque compte tient un registre continu de transactions (plus de report manuel de solde d'un mois à l'autre).
 
-- **Compte** : id, nom, solde initial, date de création, actif/archivé.
-- **Catégorie** : id, nom, sens (dépense / recette / les deux), icône et/ou couleur, visible/masquée, ordre. Les 27 catégories Excel sont pré-chargées comme valeurs par défaut.
-- **Transaction** : id, compte, date opération, date banque (optionnelle), commentaire, montant, catégorie principale, statut ; répartition = liste illimitée de sous-lignes `{montant ou %, catégorie}` avec contrôle continu que la somme égale le montant total ; lien optionnel vers une règle de récurrence d'origine ; lien automatique vers la transaction miroir (mouvement inter-compte).
+- **Compte** : id, nom, solde initial, date de création, actif/archivé, compte épargne (oui/non).
+- **Catégorie** : id, nom, sens (dépense / recette / les deux), icône et/ou couleur, visible/masquée, ordre, rôle système optionnel (`virement` ou `avance`, ni masquable ni supprimable). Les 27 catégories Excel, plus Internet/téléphone, sont pré-chargées comme valeurs par défaut.
+- **Transaction** : id, compte, date opération, date banque (optionnelle), commentaire, montant, catégorie principale, statut (Non pointé, Pointé, Prévision, Fantôme), importance (dépenses au bilan), case Hors bilan, contrepartie (Fantôme), type d'avance (réglée ailleurs / en attente) et lien vers son remboursement ; répartition = liste illimitée de sous-lignes `{montant ou %, catégorie}` avec contrôle continu que la somme égale le montant total ; lien optionnel vers une règle de récurrence d'origine ; lien automatique vers la transaction miroir (mouvement inter-compte).
 - **Règle de transaction récurrente** : id, compte, montant, catégorie, fréquence (mensuelle/hebdomadaire/annuelle), date de référence, mode automatique (opt-in explicite), actif/inactif, date de fin optionnelle.
-- **Budget prévisionnel** : id, catégorie, montant plafond, période (mensuelle), report du reliquat activable/désactivable par budget.
+- **Budget prévisionnel** : id, catégorie ou niveau d'importance (l'un des deux), montant plafond, période (mensuelle), report du reliquat activable/désactivable par budget.
 
 ## 7. Règles de gestion & calculs
 
 - **Solde pointé** = somme des transactions au statut Pointé (confirmé par la banque).
-- **Solde réel/prévisionnel** = somme de toutes les transactions sauf Flux comptable (donc y compris les Prévisions).
+- **Solde réel/prévisionnel** = somme de toutes les transactions sauf Fantôme (donc y compris les Prévisions).
+- **Bilan comptable** : somme, par part, des opérations Non pointé, Pointé et Fantôme, hors Hors bilan et hors parts Avancé (ADR 0004). La trésorerie fait les soldes ; le bilan fait dépenses, recettes, budgets, importance et comparaisons.
 - **Split** : répartition illimitée, en montant fixe ou en pourcentage ; la somme doit toujours égaler 100% ou le montant total, contrôlée en direct (pas a posteriori comme dans l'Excel).
 - **Avances** : portion non affectée d'un split marquable "Avancé" sur n'importe quel compte.
 - **Mouvements inter-comptes** : transaction miroir créée automatiquement dès la saisie (une seule action pour les deux écritures liées) — rend inutile toute vérification de cohérence a posteriori.
@@ -110,8 +111,17 @@ Pas de découpage en versions successives (pas de MVP/V2/V3) : l'ensemble des fo
 - **Pointé** : transaction rapprochée avec le relevé bancaire (confirmée).
 - **Non Pointé** : transaction saisie mais pas encore confirmée par la banque.
 - **Prévision** : dépense/recette anticipée, pas encore réalisée.
-- **Flux comptable** : mouvement technique (ex. virement interne) neutralisé dans les totaux pour éviter les doublons.
-- **Avancé** : montant avancé par l'utilisateur, à se faire rembourser plus tard.
+- **Trésorerie** : les vrais flux bancaires ; fait les soldes.
+- **Bilan comptable** : ce qu'on a réellement dépensé ou gagné ; fait les dépenses, recettes, budgets, importance et comparaisons.
+- **Fantôme** : statut d'une écriture comptable sans flux bancaire (impôt à la source, part salariale des tickets resto, dépense payée par quelqu'un d'autre). Elle compte au bilan, pas dans les soldes. Remplace Flux comptable.
+- **Contrepartie** : fantôme de sens opposé lié à un autre fantôme, pour qu'une charge prélevée à la source ne soit pas comptée deux fois.
+- **Hors bilan** : opération de trésorerie seulement. Elle compte dans les soldes, pas au bilan.
+- **Avancé** : catégorie système, toujours hors bilan. Une avance est *réglée ailleurs* (Tricount) ou *en attente* (notes de frais comprises).
+- **Remboursement** : recette hors bilan reliée à une avance en attente.
+- **Importance** : Essentiel, Secondaire important, Secondaire superflu ou Exceptionnel ; ne concerne que les dépenses au bilan.
+- **Compte épargne** : compte dont les virements entrants et sortants font l'épargne versée.
+- **Comparaison à date** : dépenses cumulées du 1er au jour J, comparées à la moyenne des 3 mois précédents au même jour.
+- **Date simulée** : décalage de l'horloge de l'app, réservé au développement.
 - **Split / transaction divisée** : transaction dont le montant est réparti sur plusieurs catégories.
 
 ## Points restant à trancher

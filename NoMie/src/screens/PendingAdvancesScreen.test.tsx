@@ -29,7 +29,6 @@ async function seedAdvance(
         {
           categoryId: categories.find((c) => c.name === 'Avancé')!.id,
           amount: -amount / 2,
-          advanced: true,
         },
       ],
     });

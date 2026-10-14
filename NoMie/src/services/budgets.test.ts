@@ -104,11 +104,16 @@ describe('dataService — budgets', () => {
       expect(progress.remaining).toBe(50);
     });
 
-    it('leaves out Prévision, Flux comptable, other categories, other months and archived accounts', async () => {
+    it('counts a Fantôme, the way the bilan does', async () => {
+      await spend('Restaurant', 25, '2026-09-10', 'fantome');
+
+      expect((await restaurant(SEPT)).spent).toBe(25);
+    });
+
+    it('leaves out Prévision, other categories, other months and archived accounts', async () => {
       const other = (await dataService.createAccount({ name: 'Archivé', initialBalance: 0 })).id;
       await spend('Restaurant', 10);
       await spend('Restaurant', 1000, '2026-09-10', 'prevision');
-      await spend('Restaurant', 1000, '2026-09-10', 'flux_comptable');
       await spend('Loisir', 1000);
       await spend('Restaurant', 1000, '2026-08-31');
       await spend('Restaurant', 1000, '2026-10-01');
@@ -145,7 +150,7 @@ describe('dataService — budgets', () => {
         categoryId: cat['Restaurant'],
         splits: [
           { categoryId: cat['Restaurant'], amount: -14.25 },
-          { categoryId: cat['Avancé'], amount: -14.25, advanced: true },
+          { categoryId: cat['Avancé'], amount: -14.25 },
         ],
       });
       expect((await restaurant(SEPT)).spent).toBe(14.25);

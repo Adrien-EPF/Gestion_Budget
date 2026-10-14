@@ -73,13 +73,13 @@ describe('dataService — réglages', () => {
         accountId: first.id,
         operationDate: '2026-09-10',
         amount: -64.5,
-        splits: [{ amount: -64.5, advanced: true }],
+        splits: [{ categoryId: (await dataService.listCategories()).find((c) => c.name === 'Avancé')!.id, amount: -64.5 }],
       });
 
       expect(await dataService.getStructureSummary()).toEqual({
         activeAccounts: 2,
         archivedAccounts: 1,
-        categories: 27,
+        categories: 28,
         advances: { count: 1, total: 64.5 },
       });
     });

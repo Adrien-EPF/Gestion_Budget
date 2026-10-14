@@ -1,6 +1,5 @@
-import { openNodeSqliteDatabase } from '../db/nodeSqliteDatabase';
 import { createTestDataService } from '../test-utils/createTestDataService';
-import { createDataService, type DataService } from './dataService';
+import type { DataService } from './dataService';
 
 describe('dataService — split, inter-account movements, advances', () => {
   let dataService: DataService;
@@ -31,14 +30,14 @@ describe('dataService — split, inter-account movements, advances', () => {
         amount: -28.5,
         splits: [
           { categoryId: categoryIds['Restaurant'], amount: -14.25 },
-          { categoryId: categoryIds['Avancé'], amount: -14.25, advanced: true },
+          { categoryId: categoryIds['Avancé'], amount: -14.25 },
         ],
       });
 
       const read = await dataService.getTransaction(created.id);
       expect(read?.splits).toEqual([
-        { categoryId: categoryIds['Restaurant'], amount: -14.25, advanced: false },
-        { categoryId: categoryIds['Avancé'], amount: -14.25, advanced: true },
+        { categoryId: categoryIds['Restaurant'], amount: -14.25, advanced: false, advanceType: null },
+        { categoryId: categoryIds['Avancé'], amount: -14.25, advanced: true, advanceType: 'en_attente' },
       ]);
       expect(read).toEqual(created);
     });
@@ -148,7 +147,7 @@ describe('dataService — split, inter-account movements, advances', () => {
         operationDate: '2026-09-11',
         amount: -28.5,
         status: 'pointe',
-        splits: [{ amount: -14.25 }, { amount: -14.25, advanced: true }],
+        splits: [{ amount: -14.25 }, { categoryId: categoryIds['Avancé'], amount: -14.25 }],
       });
       const [summary] = await dataService.listAccountSummaries(SEPT);
       expect(summary.realBalance).toBe(971.5);
@@ -235,7 +234,7 @@ describe('dataService — split, inter-account movements, advances', () => {
         accountId: livret,
         operationDate: '2026-09-13',
         amount: -10,
-        splits: [{ amount: -4 }, { amount: -6, advanced: true }],
+        splits: [{ amount: -4 }, { categoryId: categoryIds['Avancé'], amount: -6 }],
       });
 
       await dataService.deleteAccount(livret);
@@ -262,7 +261,7 @@ describe('dataService — split, inter-account movements, advances', () => {
         comment: 'Le Comptoir',
         splits: [
           { categoryId: categoryIds['Restaurant'], amount: -amount },
-          { categoryId: categoryIds['Avancé'], amount: -amount, advanced: true },
+          { categoryId: categoryIds['Avancé'], amount: -amount },
         ],
       });
 
@@ -278,7 +277,7 @@ describe('dataService — split, inter-account movements, advances', () => {
         accountId: courant,
         operationDate: '2026-09-11',
         amount: -60,
-        splits: [{ amount: -20, advanced: true }, { amount: -20, advanced: true }, { amount: -20 }],
+        splits: [{ categoryId: categoryIds['Avancé'], amount: -20 }, { categoryId: categoryIds['Avancé'], amount: -20 }, { amount: -20 }],
       });
       expect(await dataService.getPendingAdvances()).toEqual({ count: 2, total: 40 });
     });
@@ -353,7 +352,7 @@ describe('dataService — split, inter-account movements, advances', () => {
           accountId: courant,
           operationDate: '2026-09-11',
           amount: -40,
-          splits: [{ amount: -20, advanced: true }, { amount: -20, advanced: true }],
+          splits: [{ categoryId: categoryIds['Avancé'], amount: -20 }, { categoryId: categoryIds['Avancé'], amount: -20 }],
         });
         const [first, second] = await dataService.listPendingAdvances();
 
@@ -373,39 +372,6 @@ describe('dataService — split, inter-account movements, advances', () => {
 
         expect(listener).toHaveBeenCalled();
       });
-    });
-  });
-
-  describe('upgrading a database created before this ticket', () => {
-    it('adds the mirror column in place and keeps existing transactions', async () => {
-      const db = openNodeSqliteDatabase();
-      await db.execAsync(`
-        CREATE TABLE accounts (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
-          initial_balance REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL, archived INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE transactions (id INTEGER PRIMARY KEY AUTOINCREMENT, account_id INTEGER NOT NULL,
-          operation_date TEXT NOT NULL, bank_date TEXT, comment TEXT NOT NULL DEFAULT '',
-          amount REAL NOT NULL, category_id INTEGER, status TEXT NOT NULL);
-        INSERT INTO accounts (name, initial_balance, created_at) VALUES ('Ancien', 10, '2026-01-01');
-        INSERT INTO transactions (account_id, operation_date, amount, status) VALUES (1, '2026-09-01', -3, 'pointe');
-      `);
-      const upgraded = createDataService(db);
-      await upgraded.initialize();
-      await upgraded.initialize(); // relaunching is harmless
-
-      expect((await upgraded.getTransaction(1))?.mirrorTransactionId).toBeNull();
-      const transferCategory = (await upgraded.listCategories()).find(
-        (c) => c.name === 'Mouvement inter-compte'
-      )!;
-      const second = (await upgraded.createAccount({ name: 'Neuf', initialBalance: 0 })).id;
-      const moved = await upgraded.createTransaction({
-        accountId: 1,
-        operationDate: '2026-09-02',
-        amount: -1,
-        categoryId: transferCategory.id,
-        transferToAccountId: second,
-      });
-      expect(moved.mirrorTransactionId).not.toBeNull();
-      await db.closeAsync();
     });
   });
 });

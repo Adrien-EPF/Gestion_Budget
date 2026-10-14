@@ -91,7 +91,6 @@ describe('dataService — bilan annuel (#25)', () => {
       await record('Restaurant', -100, '2025-12-31');
       await record('Restaurant', -100, '2027-01-01');
       await record('Restaurant', -100, '2026-05-04', 'prevision');
-      await record('Restaurant', -100, '2026-05-05', 'flux_comptable');
 
       const flows = await dataService.getCategoryFlowsByMonth(2026);
 
@@ -126,7 +125,7 @@ describe('dataService — bilan annuel (#25)', () => {
       await record('Restaurant', -10, '2026-01-05');
       await record('Salaire/Intérêts/Avantages', 40.5, '2026-01-06', 'pointe');
       await record('Restaurant', -99, '2026-01-06', 'prevision');
-      await record('Virement', -300, '2026-01-07', 'flux_comptable');
+      await record('Virement', -300, '2026-01-07', 'fantome');
       await record('Restaurant', -12.25, '2026-12-31', 'pointe');
       await record('Restaurant', -10, '2025-12-31');
       await record('Salaire/Intérêts/Avantages', 3, '2026-06-30', 'pointe', livret);
@@ -166,7 +165,7 @@ describe('dataService — bilan annuel (#25)', () => {
       await record('Restaurant', -40, '2026-02-10', 'pointe');
       await record('Restaurant', -25, '2026-02-18');
       await record('Loisir', -100, '2026-04-02', 'prevision');
-      await record('Virement', -300, '2026-04-03', 'flux_comptable');
+      await record('Virement', -300, '2026-04-03', 'fantome');
 
       const [series] = await dataService.getBalanceSeries(2026);
 

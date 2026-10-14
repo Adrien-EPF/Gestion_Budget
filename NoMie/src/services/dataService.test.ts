@@ -12,7 +12,7 @@ describe('dataService — categories', () => {
 
   afterEach(() => close());
 
-  it('pre-loads the 27 default categories on first launch', async () => {
+  it('pre-loads the 28 default categories on first launch', async () => {
     const categories = await dataService.listCategories();
     expect(categories).toHaveLength(DEFAULT_CATEGORIES.length);
     expect(categories.map((c) => c.name)).toEqual(DEFAULT_CATEGORIES.map((c) => c.name));

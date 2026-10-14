@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import type { RecurrenceFrequency } from '../services/dataService';
-import { TRANSFER_CATEGORY_NAME } from '../data/defaultCategories';
 import { colors, spacing, textStyle } from '../theme/tokens';
 import { parseMoneyInput } from '../utils/amountInput';
 import { parseTypedDate, toIsoDate, toTypedDate } from '../utils/dates';
@@ -61,7 +60,7 @@ function AddRecurrenceForm({ onClose }: { onClose: () => void }) {
   const usableCategories = (categories ?? []).filter(
     (c) =>
       !c.hidden &&
-      c.name !== TRANSFER_CATEGORY_NAME &&
+      c.systemRole !== 'virement' &&
       (c.kind === 'both' || c.kind === direction)
   );
 

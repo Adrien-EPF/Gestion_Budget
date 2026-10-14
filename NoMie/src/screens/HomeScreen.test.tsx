@@ -32,7 +32,7 @@ describe('Écran Accueil', () => {
     await add({ operationDate: today, amount: -100, status: 'pointe', comment: 'Essence' });
     await add({ operationDate: today, amount: -30, status: 'non_pointe', comment: 'Café' });
     await add({ operationDate: today, amount: 2000, status: 'prevision', comment: 'Salaire' });
-    await add({ operationDate: today, amount: -200, status: 'flux_comptable', comment: 'Vers livret' });
+    await add({ operationDate: today, amount: -200, status: 'fantome', comment: 'Vers livret' });
 
     expect(screen.getByTestId('home-total-real').props.children).toBe(formatAmount(2870));
     expect(screen.getByTestId('home-total-pointed').props.children).toBe(
@@ -62,15 +62,15 @@ describe('Écran Accueil', () => {
     expect(screen.queryByLabelText(/à pointer$/)).toBeNull();
   });
 
-  it('summarises the month without Flux comptable and without Prévision', async () => {
+  it('summarises the month with its Fantôme and without Prévision', async () => {
     await add({ operationDate: today, amount: -64.32, comment: 'Carrefour' });
     await add({ operationDate: today, amount: -28.5, status: 'pointe', comment: 'Resto' });
     await add({ operationDate: today, amount: 100, status: 'pointe', comment: 'Remboursement' });
-    await add({ operationDate: today, amount: -200, status: 'flux_comptable', comment: 'Vers livret' });
+    await add({ operationDate: today, amount: -200, status: 'fantome', comment: 'Vers livret' });
     await add({ operationDate: today, amount: 2380, status: 'prevision', comment: 'Salaire' });
 
     expect(screen.getByText('Ce mois-ci')).toBeTruthy();
-    expect(screen.getByTestId('home-month-expenses').props.children).toBe(formatAmount(92.82));
+    expect(screen.getByTestId('home-month-expenses').props.children).toBe(formatAmount(292.82));
     expect(screen.getByTestId('home-month-income').props.children).toBe(formatAmount(100));
   });
 
@@ -135,15 +135,15 @@ describe('Écran Accueil', () => {
       );
     });
 
-    it('leaves Prévision and Flux comptable untouched when tapped', async () => {
+    it('leaves Prévision and Fantôme untouched when tapped', async () => {
       await add({ operationDate: today, amount: 2380, status: 'prevision', comment: 'Salaire' });
-      await add({ operationDate: today, amount: -200, status: 'flux_comptable', comment: 'Vers livret' });
+      await add({ operationDate: today, amount: -200, status: 'fantome', comment: 'Vers livret' });
 
       await press(screen.getByLabelText('Salaire, Prévision'));
-      await press(screen.getByLabelText('Vers livret, Flux comptable'));
+      await press(screen.getByLabelText('Vers livret, Fantôme'));
 
       expect(screen.getByLabelText('Salaire, Prévision')).toBeTruthy();
-      expect(screen.getByLabelText('Vers livret, Flux comptable')).toBeTruthy();
+      expect(screen.getByLabelText('Vers livret, Fantôme')).toBeTruthy();
     });
 
     it('shows a calm note when the month has no operation', async () => {
@@ -185,7 +185,7 @@ describe('Écran Accueil', () => {
         categoryId: id('Restaurant'),
         splits: [
           { categoryId: id('Restaurant'), amount: -amount },
-          { categoryId: id('Avancé'), amount: -amount, advanced: true },
+          { categoryId: id('Avancé'), amount: -amount },
         ],
       });
     };
