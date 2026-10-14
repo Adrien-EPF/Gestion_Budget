@@ -1,4 +1,5 @@
-import { act, screen } from '@testing-library/react-native';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react-native';
+import type { Importance } from '../services/dataService';
 import { toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 import { plain, press, renderApp } from '../test-utils/renderWithApp';
@@ -172,6 +173,115 @@ describe('Saisie rapide (bottom sheet)', () => {
     await press(screen.getByText('Enregistrer'));
 
     expect((await monthOperations())[0].amount).toBe(-3);
+  });
+
+  describe('calculs dans le montant', () => {
+    it('records 11,9 × 2 as 23,80', async () => {
+      await openSheet();
+      await typeAmount('1', '1', 'Virgule', '9', 'Multiplier', '2');
+      expect(screen.getByTestId('quick-entry-amount').props.children).toBe('−11,9×2');
+      expect(screen.getByTestId('quick-entry-result').props.children).toBe('= 23,80');
+      await press(screen.getByText('Enregistrer'));
+
+      expect((await monthOperations())[0].amount).toBe(-23.8);
+    });
+
+    it('refuses a calculation that comes out at zero or below', async () => {
+      await openSheet();
+      await typeAmount('5', 'Soustraire', '8');
+      expect(screen.getByLabelText('Enregistrer').props.accessibilityState.disabled).toBe(true);
+      await press(screen.getByLabelText('Effacer'));
+      await typeAmount('5');
+      expect(screen.getByLabelText('Enregistrer').props.accessibilityState.disabled).toBe(true);
+      await press(screen.getByLabelText('Effacer'));
+      await typeAmount('3');
+      expect(screen.getByLabelText('Enregistrer').props.accessibilityState.disabled).toBe(false);
+    });
+  });
+
+  describe('libellé et suggestions', () => {
+    const seed = (comment: string, categoryName: string, importance: Importance) =>
+      act(async () => {
+        const categories = await app.dataService.listCategories();
+        await app.dataService.createTransaction({
+          accountId,
+          operationDate: '2026-01-05',
+          amount: -20,
+          comment,
+          importance,
+          categoryId: categories.find((c) => c.name === categoryName)!.id,
+        });
+      });
+
+    it('saves the label typed', async () => {
+      await openSheet();
+      await typeAmount('4');
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Libellé'), 'Boulangerie');
+      });
+      await press(screen.getByText('Enregistrer'));
+
+      expect((await monthOperations())[0].comment).toBe('Boulangerie');
+    });
+
+    it('pre-fills category and importance from a known label', async () => {
+      await seed('Cinéma Gaumont', 'Culture', 'secondaire_superflu');
+      await openSheet();
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Libellé'), 'cine');
+      });
+      await press(await screen.findByLabelText('Cinéma Gaumont'));
+
+      expect(screen.getByLabelText('Culture').props.accessibilityState.selected).toBe(true);
+      expect(screen.getByLabelText('Secondaire superflu').props.accessibilityState.selected).toBe(true);
+
+      await typeAmount('9');
+      await press(screen.getByText('Enregistrer'));
+      const [created] = await monthOperations();
+      expect(created.importance).toBe('secondaire_superflu');
+      expect(created.categoryName).toBe('Culture');
+    });
+
+    it('pre-selects Essentiel, then the last level of the chosen category', async () => {
+      await seed('Cinéma Gaumont', 'Culture', 'exceptionnel');
+      await openSheet();
+      expect(screen.getByLabelText('Essentiel').props.accessibilityState.selected).toBe(false);
+      await screen.findByLabelText('Exceptionnel');
+      await waitFor(() =>
+        expect(screen.getByLabelText('Exceptionnel').props.accessibilityState.selected).toBe(true)
+      );
+      await press(screen.getByLabelText('Restaurant'));
+      await press(screen.getByLabelText('Culture'));
+      await waitFor(() =>
+        expect(screen.getByLabelText('Exceptionnel').props.accessibilityState.selected).toBe(true)
+      );
+    });
+
+    it('has no importance for an income', async () => {
+      await openSheet();
+      await press(screen.getByLabelText('Basculer dépense ou recette'));
+      expect(screen.queryByLabelText('Essentiel')).toBeNull();
+    });
+  });
+
+  describe('Plus d’options', () => {
+    it('carries amount, label, category and importance to the full screen', async () => {
+      await openSheet();
+      await typeAmount('1', '1', 'Virgule', '9', 'Multiplier', '2');
+      await act(async () => {
+        fireEvent.changeText(screen.getByLabelText('Libellé'), 'Lidl');
+      });
+      await press(screen.getByLabelText('Restaurant'));
+      await press(screen.getByLabelText('Secondaire important'));
+      await press(screen.getByText('Plus d’options'));
+
+      const form = await screen.findByTestId('operation-form');
+      expect(form).toBeTruthy();
+      expect(screen.getByLabelText('Montant').props.value).toBe('23,8');
+      expect(screen.getByLabelText('Libellé').props.value).toBe('Lidl');
+      expect(screen.getByLabelText('Restaurant').props.accessibilityState.selected).toBe(true);
+      expect(screen.getByLabelText('Secondaire important').props.accessibilityState.selected).toBe(true);
+    });
   });
 
   it('asks for an account first when none exists, and disables saving', async () => {

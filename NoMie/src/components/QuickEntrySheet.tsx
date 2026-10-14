@@ -3,23 +3,42 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
+import type { Importance } from '../services/dataService';
+import { hasOperator } from '../utils/amountExpression';
 import { applyKey, parseAmountText, type KeypadKey } from '../utils/amountInput';
 import { toIsoDate } from '../utils/dates';
+import { IMPORTANCE_LABELS } from '../utils/importanceCopy';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
+import { Chips } from './Chips';
+import { TextField } from './TextField';
 
-const KEYPAD_ROWS: { key: KeypadKey; label: string; accessibilityLabel: string }[][] = [
-  ['1', '2', '3'],
-  ['4', '5', '6'],
-  ['7', '8', '9'],
-  [',', '0', 'backspace'],
-].map((row) =>
+const KEYPAD_LABELS: Partial<Record<KeypadKey, { label: string; accessibilityLabel: string }>> = {
+  backspace: { label: '←', accessibilityLabel: 'Effacer' },
+  ',': { label: ',', accessibilityLabel: 'Virgule' },
+  '×': { label: '×', accessibilityLabel: 'Multiplier' },
+  '−': { label: '−', accessibilityLabel: 'Soustraire' },
+  '+': { label: '+', accessibilityLabel: 'Additionner' },
+};
+
+const KEYPAD_ROWS: { key: KeypadKey; label: string; accessibilityLabel: string }[][] = (
+  [
+    ['1', '2', '3', '×'],
+    ['4', '5', '6', '−'],
+    ['7', '8', '9', '+'],
+    [',', '0', 'backspace'],
+  ] as KeypadKey[][]
+).map((row) =>
   row.map((key) => ({
-    key: key as KeypadKey,
-    label: key === 'backspace' ? '←' : key,
-    accessibilityLabel: key === ',' ? 'Virgule' : key === 'backspace' ? 'Effacer' : key,
+    key,
+    label: KEYPAD_LABELS[key]?.label ?? key,
+    accessibilityLabel: KEYPAD_LABELS[key]?.accessibilityLabel ?? key,
   }))
 );
+
+const IMPORTANCE_OPTIONS = (
+  ['essentiel', 'secondaire_important', 'secondaire_superflu', 'exceptionnel'] as const
+).map((value) => ({ value, label: IMPORTANCE_LABELS[value] }));
 
 interface QuickEntrySheetProps {
   visible: boolean;
@@ -44,21 +63,49 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
   const [amountText, setAmountText] = useState('');
   const [isExpense, setIsExpense] = useState(true);
   const [categoryId, setCategoryId] = useState<number | null>(null);
+  const [label, setLabel] = useState('');
+  // Null until picked: then the level last used for the category, else Essentiel.
+  const [importanceChoice, setImportanceChoice] = useState<Importance | null>(null);
+
+  const suggestions = useServiceQuery(
+    (s) => s.listLabelSuggestions({ query: label, expense: isExpense }),
+    [label, isExpense]
+  );
+  const defaultImportance = useServiceQuery((s) => s.getDefaultImportance(categoryId), [categoryId]);
+  const importance = importanceChoice ?? defaultImportance ?? 'essentiel';
 
   const kind = isExpense ? 'expense' : 'income';
   const visibleCategories = (categories ?? []).filter(
     (c) => !c.hidden && (c.kind === kind || c.kind === 'both')
   );
   const noAccountYet = currentAccount === null;
+  const isCalculation = hasOperator(amountText);
+  const result = parseAmountText(amountText);
+  // A calculation that comes out at zero or below is not recordable.
+  const unrecordable = isCalculation && result <= 0;
+  const shownSuggestions = label.trim() === '' ? [] : (suggestions ?? []).filter((s) => s.label !== label);
 
   const toggleSign = () => {
     setIsExpense((expense) => !expense);
     // A category only fits one direction; keep the choice only if it fits the new one.
     setCategoryId(null);
+    setImportanceChoice(null);
+  };
+
+  const chooseCategory = (id: number | null) => {
+    setCategoryId(id);
+    setImportanceChoice(null);
+  };
+
+  const pickSuggestion = (suggestion: (typeof shownSuggestions)[number]) => {
+    setLabel(suggestion.label);
+    const fits = visibleCategories.some((c) => c.id === suggestion.categoryId);
+    if (suggestion.categoryId !== null && fits) setCategoryId(suggestion.categoryId);
+    if (suggestion.importance !== null) setImportanceChoice(suggestion.importance);
   };
 
   const save = async () => {
-    const value = parseAmountText(amountText);
+    const value = result;
     const account = await dataService.getCurrentAccount();
     // Nothing typed (or nowhere to put it) is a cancelled entry, not an error.
     if (value === 0 || !account) {
@@ -70,13 +117,23 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
       operationDate: toIsoDate(dataService.now()),
       amount: isExpense ? -value : value,
       categoryId,
+      comment: label.trim(),
+      ...(isExpense ? { importance } : {}),
     });
     onClose();
   };
 
   const openFullScreen = () => {
-    const value = parseAmountText(amountText);
-    editor.open({ kind: 'new', draft: { amount: value > 0 ? value : undefined, isExpense, categoryId } });
+    editor.open({
+      kind: 'new',
+      draft: {
+        amount: result > 0 ? result : undefined,
+        isExpense,
+        categoryId,
+        comment: label.trim(),
+        ...(isExpense ? { importance } : {}),
+      },
+    });
     onClose();
   };
 
@@ -96,6 +153,11 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
         </Text>
         <Text style={styles.currency}>€</Text>
         <View style={styles.spacer} />
+        {isCalculation ? (
+          <Text testID="quick-entry-result" style={[textStyle('bodyMdMedium'), styles.result]}>
+            {`= ${result.toFixed(2).replace('.', ',')}`}
+          </Text>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Basculer dépense ou recette"
@@ -122,8 +184,21 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
                 <Text style={styles.keyLabel}>{label}</Text>
               </Pressable>
             ))}
+            {row.length < 4 ? <View style={styles.keySpacer} /> : null}
           </View>
         ))}
+      </View>
+
+      <View style={styles.labelField}>
+        <TextField label="Libellé" value={label} onChangeText={setLabel} placeholder="Ex. Lidl" />
+        {shownSuggestions.length > 0 ? (
+          <Chips
+            scroll
+            options={shownSuggestions.map((s) => ({ value: s.label, label: s.label }))}
+            value={null}
+            onChange={(picked) => pickSuggestion(shownSuggestions.find((s) => s.label === picked)!)}
+          />
+        ) : null}
       </View>
 
       <ScrollView
@@ -141,7 +216,7 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
               accessibilityRole="button"
               accessibilityLabel={category.name}
               accessibilityState={{ selected }}
-              onPress={() => setCategoryId(selected ? null : category.id)}
+              onPress={() => chooseCategory(selected ? null : category.id)}
               style={[styles.chip, selected && { backgroundColor: colors.primary }]}
             >
               <Text
@@ -157,13 +232,20 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
         })}
       </ScrollView>
 
+      {isExpense ? (
+        <View style={styles.importance}>
+          <Text style={[textStyle('caption'), styles.importanceLabel]}>Importance</Text>
+          <Chips scroll options={IMPORTANCE_OPTIONS} value={importance} onChange={setImportanceChoice} />
+        </View>
+      ) : null}
+
       <Button label="Plus d’options" variant="ghost" onPress={openFullScreen} style={styles.moreOptions} />
 
       <View style={styles.actions}>
         <Button label="Annuler" variant="secondary" onPress={onClose} />
         <Button
           label="Enregistrer"
-          disabled={noAccountYet}
+          disabled={noAccountYet || unrecordable}
           onPress={save}
           style={styles.saveButton}
         />
@@ -206,6 +288,20 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
   },
+  result: {
+    color: colors.ash,
+    marginRight: spacing.xs,
+    alignSelf: 'center',
+  },
+  labelField: {
+    marginTop: spacing.sm,
+  },
+  importance: {
+    marginTop: spacing.xs,
+  },
+  importanceLabel: {
+    color: colors.ash,
+  },
   signToggle: {
     alignSelf: 'center',
     backgroundColor: colors.surfaceSoft,
@@ -229,6 +325,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  keySpacer: {
+    flex: 1,
   },
   keyLabel: {
     fontSize: 18,

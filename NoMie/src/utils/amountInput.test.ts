@@ -84,3 +84,40 @@ describe('toMoneyInput', () => {
     expect(parseMoneyInput(toMoneyInput(-42.25))).toBe(-42.25);
   });
 });
+
+describe('applyKey with operators', () => {
+  it('ignores an operator before any number', () => {
+    expect(type(['×'])).toBe('');
+    expect(type(['+', '−'])).toBe('');
+  });
+
+  it('builds a calculation, each number with its own comma and decimals', () => {
+    expect(type(['1', '1', ',', '9', '×', '2'])).toBe('11,9×2');
+    expect(type(['1', ',', '5', '+', '2', ',', '5', ',', '7', '5', '9'])).toBe('1,5+2,57');
+  });
+
+  it('lets an operator replace the previous one, and drops a dangling comma', () => {
+    expect(type(['5', '+', '×'])).toBe('5×');
+    expect(type(['5', ',', '+'])).toBe('5+');
+  });
+
+  it('starts a new number with 0, when the comma comes first, and without a stacked zero', () => {
+    expect(type(['5', '+', ','])).toBe('5+0,');
+    expect(type(['5', '+', '0', '7'])).toBe('5+7');
+  });
+
+  it('erases an operator like any character', () => {
+    expect(type(['5', '+', 'backspace'])).toBe('5');
+  });
+});
+
+describe('parseAmountText', () => {
+  it('evaluates a calculation and rounds it to the cent', () => {
+    expect(parseAmountText('11,9×2')).toBe(23.8);
+  });
+
+  it('is 0 for an empty or unfinished input', () => {
+    expect(parseAmountText('')).toBe(0);
+    expect(parseAmountText('5+')).toBe(0);
+  });
+});

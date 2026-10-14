@@ -1,30 +1,55 @@
-export type KeypadKey = '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9' | ',' | 'backspace';
+import { evaluateAmountExpression, isOperator, type Operator } from './amountExpression';
 
-/** Handoff §6.6: "9 caractères max", a single comma. */
+export type KeypadKey =
+  | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
+  | ','
+  | 'backspace'
+  | Operator;
+
+/** Handoff §6.6: "9 caractères max" per number, a single comma. */
 const MAX_LENGTH = 9;
 const MAX_DECIMALS = 2;
+/** A whole calculation stays short enough for the amount line. */
+const MAX_EXPRESSION_LENGTH = 24;
 
-/** Applies one keypad press to the amount typed so far (a string like `"12,5"`). */
+/**
+ * Applies one keypad press to the amount typed so far: a number like `"12,5"`, or a
+ * calculation like `"11,9×2"`. The limits apply to the number being typed.
+ */
 export function applyKey(current: string, key: KeypadKey): string {
   if (key === 'backspace') return current.slice(0, -1);
-  if (current.length >= MAX_LENGTH) return current;
 
-  if (key === ',') {
-    if (current.includes(',')) return current;
-    return current === '' ? '0,' : `${current},`;
+  if (isOperator(key)) {
+    if (current === '') return current;
+    // Pressing a second operator changes the first one.
+    if (isOperator(current.slice(-1))) return current.slice(0, -1) + key;
+    if (current.length >= MAX_EXPRESSION_LENGTH) return current;
+    return current.endsWith(',') ? current.slice(0, -1) + key : current + key;
   }
 
-  const commaAt = current.indexOf(',');
-  if (commaAt !== -1 && current.length - commaAt - 1 >= MAX_DECIMALS) return current;
+  const operandStart = Math.max(...['+', '−', '×'].map((op) => current.lastIndexOf(op))) + 1;
+  const head = current.slice(0, operandStart);
+  const operand = current.slice(operandStart);
+  if (operand.length >= MAX_LENGTH || current.length >= MAX_EXPRESSION_LENGTH) return current;
+
+  if (key === ',') {
+    if (operand.includes(',')) return current;
+    return operand === '' ? `${head}0,` : `${current},`;
+  }
+
+  const commaAt = operand.indexOf(',');
+  if (commaAt !== -1 && operand.length - commaAt - 1 >= MAX_DECIMALS) return current;
   // "0" followed by a digit is just that digit, not "05".
-  if (current === '0') return key;
+  if (operand === '0') return head + key;
   return current + key;
 }
 
-/** `"12,5"` -> `12.5`; empty or unparsable input is `0`. */
+/**
+ * What the keypad text is worth: the number itself, or the result of the calculation
+ * rounded to the cent. Empty or unfinished input is `0`.
+ */
 export function parseAmountText(text: string): number {
-  const value = Number(text.replace(',', '.'));
-  return Number.isFinite(value) ? value : 0;
+  return evaluateAmountExpression(text) ?? 0;
 }
 
 /**

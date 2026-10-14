@@ -23,6 +23,7 @@ import {
   type RecurrenceFrequency,
 } from '../utils/recurrence';
 import { FREQUENCY_LABELS } from '../utils/recurrenceCopy';
+import { normalizeLabel } from '../utils/labels';
 import { IMPORTANCE_LABELS, ADVANCE_TYPE_LABELS } from '../utils/importanceCopy';
 import { STATUS_LABELS } from '../utils/statusCopy';
 
@@ -166,6 +167,13 @@ export interface TransactionListItem extends TransactionFields {
   categoryIcon: string | null;
   /** Absolute total of the portions marked Avancé; 0 when there are none. */
   advancedAmount: number;
+}
+
+export interface LabelSuggestion {
+  /** The label as last typed. */
+  label: string;
+  categoryId: number | null;
+  importance: Importance | null;
 }
 
 export interface NewTransaction {
@@ -970,6 +978,55 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       'SELECT * FROM accounts WHERE archived = 0 ORDER BY created_at ASC, id ASC LIMIT 1'
     );
     return row ? toAccount(row) : null;
+  }
+
+  const MAX_LABEL_SUGGESTIONS = 5;
+
+  /**
+   * The labels already used that start like `query` (normalized), most frequent first then
+   * most recent. Each carries the category and importance of its latest operation.
+   */
+  async function listLabelSuggestions(input: { query: string; expense: boolean }): Promise<LabelSuggestion[]> {
+    const wanted = normalizeLabel(input.query);
+    const rows = await db.getAllAsync<{
+      comment: string;
+      category_id: number | null;
+      importance: Importance | null;
+    }>(
+      `SELECT comment, category_id, importance FROM transactions
+       WHERE comment <> '' AND amount ${input.expense ? '<' : '>'} 0
+       ORDER BY operation_date DESC, id DESC`
+    );
+    // Newest first: the first row of a label is its latest operation.
+    const groups = new Map<string, { suggestion: LabelSuggestion; count: number; rank: number }>();
+    rows.forEach((row, rank) => {
+      const key = normalizeLabel(row.comment);
+      if (key === '' || !key.startsWith(wanted)) return;
+      const group = groups.get(key);
+      if (group) group.count++;
+      else
+        groups.set(key, {
+          suggestion: { label: row.comment, categoryId: row.category_id, importance: row.importance },
+          count: 1,
+          rank,
+        });
+    });
+    return [...groups.values()]
+      .sort((a, b) => b.count - a.count || a.rank - b.rank)
+      .slice(0, MAX_LABEL_SUGGESTIONS)
+      .map((group) => group.suggestion);
+  }
+
+  /** Pre-filled importance: last level used for the category, else anywhere, else Essentiel. */
+  async function getDefaultImportance(categoryId: number | null): Promise<Importance> {
+    const latest = (where: string, params: number[]) =>
+      db.getFirstAsync<{ importance: Importance }>(
+        `SELECT importance FROM transactions WHERE importance IS NOT NULL ${where}
+         ORDER BY operation_date DESC, id DESC LIMIT 1`,
+        params
+      );
+    const forCategory = categoryId === null ? null : await latest('AND category_id = ?', [categoryId]);
+    return (forCategory ?? (await latest('', [])))?.importance ?? 'essentiel';
   }
 
   async function getSystemCategoryId(role: CategorySystemRole): Promise<number | null> {
@@ -2440,6 +2497,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     updateInitialBalance,
     deleteAccount,
     getCurrentAccount,
+    listLabelSuggestions,
+    getDefaultImportance,
     createTransaction,
     updateTransaction,
     deleteTransaction,

@@ -8,6 +8,7 @@ import { TextField } from '../components/TextField';
 import type {
   AdvanceType,
   Category,
+  Importance,
   NewSplitLine,
   NewTransaction,
   Transaction,
@@ -20,12 +21,13 @@ import { parseMoneyInput } from '../utils/amountInput';
 import { formatNumericDate, parseNumericDate, toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
 import { remainingToSplit, shareEvenly } from '../utils/splitShare';
+import { IMPORTANCE_LABELS } from '../utils/importanceCopy';
 import { STATUS_LABELS } from '../utils/statusCopy';
 
 /** What the Opération screen opens on: an existing operation, or a new one with what was already typed. */
 export type OperationTarget =
   | { kind: 'edit'; id: number }
-  | { kind: 'new'; draft?: { amount?: number; isExpense?: boolean; categoryId?: number | null; comment?: string } };
+  | { kind: 'new'; draft?: { amount?: number; isExpense?: boolean; categoryId?: number | null; comment?: string; importance?: Importance } };
 
 interface OperationScreenProps {
   target: OperationTarget;
@@ -44,6 +46,10 @@ interface PartDraft {
   valueText: string;
   advanceType: AdvanceType;
 }
+
+const IMPORTANCE_OPTIONS: ChipOption<Importance>[] = (
+  ['essentiel', 'secondaire_important', 'secondaire_superflu', 'exceptionnel'] as const
+).map((value) => ({ value, label: IMPORTANCE_LABELS[value] }));
 
 const MODE_OPTIONS: ChipOption<SplitMode>[] = [
   { value: 'amount', label: 'En euros' },
@@ -153,6 +159,10 @@ function OperationForm({
     existing ? (initialSplits.length > 0 ? null : existing.categoryId) : (draft?.categoryId ?? null)
   );
   const [destinationId, setDestinationId] = useState<number | null>(mirror?.accountId ?? null);
+  // Null until picked: then the level last used for the category, else Essentiel.
+  const [importanceChoice, setImportanceChoice] = useState<Importance | null>(
+    existing?.importance ?? draft?.importance ?? null
+  );
   const [offBalanceChoice, setOffBalanceChoice] = useState(existing?.offBalance ?? false);
   const [advanceType, setAdvanceType] = useState<AdvanceType>(existing?.advanceType ?? 'reglee_ailleurs');
   // Null until the user touches the switch: on by default for Impôts, off otherwise.
@@ -176,6 +186,7 @@ function OperationForm({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const defaultImportance = useServiceQuery((s) => s.getDefaultImportance(categoryId), [categoryId]);
   const total = parseMoneyInput(amountText) ?? 0;
   const isMovementCategory = virementCategory !== null && categoryId === virementCategory.id;
   const canSplit = !isMovement && !isMovementCategory;
@@ -185,6 +196,8 @@ function OperationForm({
   // Hors bilan: imposed on Avancé and movements, impossible on a Fantôme (it would count nowhere).
   const offBalanceLocked = isAdvance || isMovement || isMovementCategory;
   const offBalance = offBalanceLocked || (!isFantome && offBalanceChoice);
+  const showImportance = isExpense && !offBalance;
+  const importance = importanceChoice ?? defaultImportance ?? 'essentiel';
   const linkedCounterpart = counterpart !== null;
   const canAddCounterpart = isFantome && !isMovement && !linkedCounterpart;
   const categoryName = categories.find((c) => c.id === categoryId)?.name;
@@ -298,6 +311,7 @@ function OperationForm({
       status,
       splits,
       offBalance,
+      ...(showImportance ? { importance } : {}),
       ...(isAdvance && isExpense ? { advanceType } : {}),
       ...(isMovementCategory || isMovement ? { transferToAccountId: destinationId ?? undefined } : {}),
       ...(isFantome && (addCounterpart || linkedCounterpart)
@@ -419,6 +433,12 @@ function OperationForm({
             value={destinationId}
             onChange={setDestinationId}
           />
+        </Section>
+      ) : null}
+
+      {showImportance ? (
+        <Section label="Importance">
+          <Chips options={IMPORTANCE_OPTIONS} value={importance} onChange={setImportanceChoice} />
         </Section>
       ) : null}
 
