@@ -59,8 +59,9 @@ function SummaryCard({
   year: number;
   month: number;
 }) {
+  const dataService = useDataService();
   const { spent, planned } = overview;
-  const elapsed = monthElapsedFraction(useDataService().now(), { year, month });
+  const elapsed = monthElapsedFraction(dataService.now(), { year, month });
 
   return (
     <View style={styles.summary}>

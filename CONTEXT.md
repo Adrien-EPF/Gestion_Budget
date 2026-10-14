@@ -27,7 +27,7 @@ Cas d'usage clés : saisie rapide d'une opération, pointage/rapprochement banca
 
 - 14 feuilles : `Bilan` (tableau de bord annuel), 12 feuilles mensuelles, `Data` (listes de référence).
 - Chaque feuille mensuelle suit 3 comptes : Compte courant, Livret A, EdenRed.
-- Statuts (4) : Non Pointé, Pointé, Prévision, Flux comptable.
+- Statuts (4) : Non Pointé, Pointé, Prévision, Fantôme (remplace Flux comptable, voir ADR 0004).
 - Catégories (27, liste commune) : Alimentation/Entretien essentiel, Crédit, Voiture, Transports autres, Loisir, Restaurant, Culture, Cadeaux, Habillement, Santé, Services, Sorties/bières, Logement, Impôts, Assurances, Cotisations/inscriptions, Frais, Don, Retrait, Virement, Mouvement inter-compte, Salaire/Intérêts/Avantages, Chèque, Avancé, Aide Etat, Vacances, Autres.
 - Split limité à 2 sous-catégories, avec colonne "Vérif" de contrôle a posteriori.
 - Sur EdenRed uniquement, le reste d'un split est auto-étiqueté "Avancé".
