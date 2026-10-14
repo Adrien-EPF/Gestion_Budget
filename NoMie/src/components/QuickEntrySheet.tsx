@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
-import type { Importance } from '../services/dataService';
+import { IMPORTANCE_LEVELS, type Importance } from '../services/dataService';
 import { hasOperator } from '../utils/amountExpression';
 import { applyKey, parseAmountText, type KeypadKey } from '../utils/amountInput';
 import { toIsoDate } from '../utils/dates';
@@ -36,9 +36,7 @@ const KEYPAD_ROWS: { key: KeypadKey; label: string; accessibilityLabel: string }
   }))
 );
 
-const IMPORTANCE_OPTIONS = (
-  ['essentiel', 'secondaire_important', 'secondaire_superflu', 'exceptionnel'] as const
-).map((value) => ({ value, label: IMPORTANCE_LABELS[value] }));
+const IMPORTANCE_OPTIONS = IMPORTANCE_LEVELS.map((value) => ({ value, label: IMPORTANCE_LABELS[value] }));
 
 interface QuickEntrySheetProps {
   visible: boolean;
@@ -93,8 +91,8 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
   };
 
   const chooseCategory = (id: number | null) => {
+    // An importance picked on purpose is kept; the default only follows the category.
     setCategoryId(id);
-    setImportanceChoice(null);
   };
 
   const pickSuggestion = (suggestion: (typeof shownSuggestions)[number]) => {

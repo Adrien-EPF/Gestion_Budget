@@ -1,4 +1,4 @@
-import { evaluateAmountExpression, isOperator, type Operator } from './amountExpression';
+import { OPERATORS, evaluateAmountExpression, isOperator, type Operator } from './amountExpression';
 
 export type KeypadKey =
   | '0' | '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8' | '9'
@@ -27,7 +27,7 @@ export function applyKey(current: string, key: KeypadKey): string {
     return current.endsWith(',') ? current.slice(0, -1) + key : current + key;
   }
 
-  const operandStart = Math.max(...['+', '−', '×'].map((op) => current.lastIndexOf(op))) + 1;
+  const operandStart = Math.max(...OPERATORS.map((op) => current.lastIndexOf(op))) + 1;
   const head = current.slice(0, operandStart);
   const operand = current.slice(operandStart);
   if (operand.length >= MAX_LENGTH || current.length >= MAX_EXPRESSION_LENGTH) return current;

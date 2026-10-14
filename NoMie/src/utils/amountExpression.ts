@@ -1,4 +1,4 @@
-const OPERATORS = ['+', '−', '×'] as const;
+export const OPERATORS = ['+', '−', '×'] as const;
 export type Operator = (typeof OPERATORS)[number];
 
 export const isOperator = (char: string): char is Operator => (OPERATORS as readonly string[]).includes(char);

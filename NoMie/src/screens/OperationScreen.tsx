@@ -14,6 +14,7 @@ import type {
   Transaction,
   TransactionStatus,
 } from '../services/dataService';
+import { IMPORTANCE_LEVELS } from '../services/dataService';
 import { COUNTERPART_DEFAULT_CATEGORY_NAME } from '../data/defaultCategories';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, rounded, spacing, textStyle } from '../theme/tokens';
@@ -47,9 +48,10 @@ interface PartDraft {
   advanceType: AdvanceType;
 }
 
-const IMPORTANCE_OPTIONS: ChipOption<Importance>[] = (
-  ['essentiel', 'secondaire_important', 'secondaire_superflu', 'exceptionnel'] as const
-).map((value) => ({ value, label: IMPORTANCE_LABELS[value] }));
+const IMPORTANCE_OPTIONS: ChipOption<Importance>[] = IMPORTANCE_LEVELS.map((value) => ({
+  value,
+  label: IMPORTANCE_LABELS[value],
+}));
 
 const MODE_OPTIONS: ChipOption<SplitMode>[] = [
   { value: 'amount', label: 'En euros' },
