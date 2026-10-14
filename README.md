@@ -21,7 +21,7 @@ Le projet est construit comme un produit complet dès le départ (pas de découp
 - **Avances** ("Avancé") : suivi des montants avancés à se faire rembourser, sur n'importe quel compte.
 - **Budgets prévisionnels** par catégorie, avec report du reliquat configurable, suivi visuel non alarmiste.
 - **Transactions récurrentes** activables explicitement (loyer, salaire, abonnements...).
-- **Tableau de bord annuel** : soldes, dépenses/recettes par catégorie et par mois, nombre d'opérations.
+- **Tableau de bord annuel** : trésorerie (soldes par compte) et comptable (dépenses, recettes, importance, catégories, budgets, hors bilan).
 - **Visualisations graphiques** : répartition par catégorie, évolution du solde, budget prévu vs réalisé.
 - **Notifications** bienveillantes (rappel de pointage, information budget — jamais une alerte de dépassement).
 - **Export / sauvegarde** : fichier technique réimportable + export Excel/CSV lisible, séparément.

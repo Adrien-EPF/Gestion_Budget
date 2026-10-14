@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AdvancesCard } from '../components/AdvancesCard';
 import { BudgetCard } from '../components/BudgetCard';
+import { DateComparisonCard } from '../components/DateComparisonCard';
 import { ImportanceBreakdownCard } from '../components/ImportanceBreakdownCard';
+import { OffBalanceCard } from '../components/OffBalanceCard';
 import { Button } from '../components/Button';
 import { Screen } from '../components/Screen';
 import { TransactionRow } from '../components/TransactionRow';
@@ -15,6 +17,7 @@ import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { dayOfMonth } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
+import { monthEndLabel } from '../utils/yearReportCopy';
 import { YearReportScreen } from './YearReportScreen';
 
 const BUDGET_PREVIEW_COUNT = 3;
@@ -34,6 +37,10 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const budgetOverview = useServiceQuery((s) => s.getBudgetOverview({ year, month }), [year, month]);
   const importanceShares = useServiceQuery((s) => s.getImportanceBreakdown({ month: { year, month } }), [year, month]);
   const advances = useServiceQuery((s) => s.getPendingAdvances());
+  const savingsContributed = useServiceQuery((s) => s.getSavingsContributed({ year, month }), [year, month]);
+  // `null` is an answer here (nothing to compare): only `undefined` means still loading.
+  const comparison = useServiceQuery((s) => s.getDateComparison({ year, month }), [year, month]);
+  const offBalance = useServiceQuery((s) => s.getOffBalanceSummary({ month: { year, month } }), [year, month]);
 
   if (
     !totals ||
@@ -43,7 +50,10 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
     !transactions ||
     !budgetOverview ||
     !importanceShares ||
-    !advances
+    !advances ||
+    savingsContributed === undefined ||
+    comparison === undefined ||
+    !offBalance
   ) {
     return <Screen title="NoMie" showMonthSelector>{null}</Screen>;
   }
@@ -51,13 +61,24 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   const now = dataService.now();
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const activeAccounts = summaries.filter((s) => !s.account.archived);
+  const hasSavingsAccount = activeAccounts.some((s) => s.account.isSavings);
+  const previousMonth = month === 0 ? 11 : month - 1;
+  const previousMonthLabel = monthEndLabel(previousMonth);
+  const previousMonthTotal =
+    Math.round(activeAccounts.reduce((sum, s) => sum + s.previousMonthBalance, 0) * 100) / 100;
 
   const header = (
     <View>
+      <Text accessibilityRole="header" style={[textStyle('headingMd'), styles.sectionTitle, styles.firstSectionTitle]}>
+        Trésorerie
+      </Text>
       <View style={styles.hero}>
         <Text style={[textStyle('bodySm'), styles.heroLabel]}>Solde réel · tous comptes</Text>
         <Text testID="home-total-real" style={[textStyle('displayLg'), styles.heroAmount]}>
           {formatAmount(totals.realBalance)}
+        </Text>
+        <Text testID="home-total-previous" style={[textStyle('bodySm'), styles.heroPointed]}>
+          {`${previousMonthLabel} ${formatAmount(previousMonthTotal)}`}
         </Text>
         <View style={styles.heroMeta}>
           <Text testID="home-total-pointed" style={[textStyle('bodySm'), styles.heroPointed]}>
@@ -87,7 +108,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.carousel}
         >
-          {activeAccounts.map(({ account, realBalance, pointedBalance }) => (
+          {activeAccounts.map(({ account, realBalance, pointedBalance, previousMonthBalance }) => (
             <View key={account.id} style={styles.accountCard}>
               <View style={styles.accountHeader}>
                 <View style={styles.dot} />
@@ -101,6 +122,9 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
               <Text style={[textStyle('bodySm'), styles.accountPointed]}>
                 {`Pointé ${formatAmount(pointedBalance)}`}
               </Text>
+              <Text style={[textStyle('bodySm'), styles.accountPointed]}>
+                {`${previousMonthLabel} ${formatAmount(previousMonthBalance)}`}
+              </Text>
             </View>
           ))}
         </ScrollView>
@@ -110,11 +134,25 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
         </Text>
       )}
 
+      {hasSavingsAccount ? (
+        <View style={[styles.savingsRow, styles.sectionPadding]}>
+          <Text style={[textStyle('bodyMd'), styles.sectionTitle]}>Épargne versée</Text>
+          <Text testID="home-savings" style={[textStyle('amountSm'), styles.sectionTitle]}>
+            {formatAmount(savingsContributed, { signed: true })}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.section}>
         <View style={styles.sectionHeader}>
-          <Text style={[textStyle('headingMd'), styles.sectionTitle]}>
-            {isCurrentMonth ? 'Ce mois-ci' : formatMonthLabel(year, month)}
-          </Text>
+          <View>
+            <Text accessibilityRole="header" style={[textStyle('headingMd'), styles.sectionTitle]}>
+              Comptable
+            </Text>
+            <Text style={[textStyle('bodySm'), styles.note]}>
+              {isCurrentMonth ? 'Ce mois-ci' : formatMonthLabel(year, month)}
+            </Text>
+          </View>
           <Button
             label="Bilan annuel"
             variant="ghost"
@@ -147,6 +185,13 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
           <>
             <Text style={[textStyle('headingSm'), styles.sectionTitle]}>Dépenses par importance</Text>
             <ImportanceBreakdownCard testID="home-importance" shares={importanceShares} />
+          </>
+        ) : null}
+        {comparison ? <DateComparisonCard testID="home-comparison" comparison={comparison} /> : null}
+        {offBalance.advances + offBalance.reimbursements + offBalance.transfers + offBalance.others > 0 ? (
+          <>
+            <Text style={[textStyle('headingSm'), styles.sectionTitle]}>Hors bilan</Text>
+            <OffBalanceCard testID="home-off-balance" summary={offBalance} />
           </>
         ) : null}
         {monthSummary.forecastCount > 0 ? (
@@ -213,10 +258,6 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
         <YearReportScreen
           initialYear={year}
           onClose={() => setYearReportOpen(false)}
-          onCreateBudget={() => {
-            setYearReportOpen(false);
-            navigation.navigate('Budgets');
-          }}
         />
       ) : null}
     </Screen>
@@ -238,6 +279,19 @@ function forecastNote({ forecastCount, firstForecast }: MonthSummary): string {
 const styles = StyleSheet.create({
   content: {
     paddingBottom: 116,
+  },
+  firstSectionTitle: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  sectionPadding: {
+    paddingHorizontal: spacing.md,
+  },
+  savingsRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
   },
   hero: {
     paddingTop: spacing.xs,

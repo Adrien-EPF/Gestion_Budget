@@ -406,6 +406,8 @@ export interface AccountSummary {
   account: Account;
   realBalance: number;
   pointedBalance: number;
+  /** Réel balance at the end of the month before the requested one. */
+  previousMonthBalance: number;
   /** Operations dated within the requested month (every status). */
   monthOperationCount: number;
 }
@@ -421,6 +423,46 @@ export interface MonthSummary {
   forecastCount: number;
   /** Earliest Prévision of the month, for the factual note on Accueil. */
   firstForecast: { comment: string; operationDate: string } | null;
+}
+
+/** One line of the comparison à date: spent so far this month, against the average of the previous months at the same day. */
+export interface DateComparisonAmounts {
+  current: number;
+  average: number;
+}
+
+export interface DateComparison {
+  /** Day of the month the cumul runs to (1st to this day, included). */
+  day: number;
+  /** How many of the 3 previous months had a history to average. */
+  monthsCompared: number;
+  total: DateComparisonAmounts;
+  /** Largest current spending first; categories with no spending either side are left out. */
+  byCategory: (DateComparisonAmounts & { categoryId: number | null; name: string | null })[];
+  /** The four levels, in their order. */
+  byImportance: (DateComparisonAmounts & { importance: Importance })[];
+}
+
+/** The treasury flows that never reach the bilan, for a month or a year. */
+export interface OffBalanceSummary {
+  advances: number;
+  reimbursements: number;
+  /** Money moved between accounts, counted once per movement. */
+  transfers: number;
+  /** Operations ticked Hors bilan by hand. */
+  others: number;
+}
+
+export interface YearSummary {
+  expenses: number;
+  income: number;
+  /** Expenses over the months gone by (twelve for a past year). */
+  monthlyAverage: number;
+}
+
+export interface YearBalances {
+  accounts: { account: Account; realBalance: number; pointedBalance: number }[];
+  total: BalanceTotals;
 }
 
 /** Where a year of the Bilan annuel stands (§6.7): the selector's bounds and how much of it has happened. */
@@ -442,20 +484,6 @@ export interface CategoryYearFlow {
   income: number[];
   totalExpenses: number;
   totalIncome: number;
-}
-
-/** How much one account moved each month of the Bilan annuel's year (#36, handoff §6.7). */
-export interface AccountYearChanges {
-  account: Account;
-  changes: number[];
-  total: number;
-}
-
-/** One account's balances at the end of each month of the Bilan annuel's year (#25). */
-export interface AccountYearBalances {
-  account: Account;
-  pointed: number[];
-  real: number[];
 }
 
 interface CategoryRow {
@@ -549,6 +577,7 @@ interface RecurrenceRuleListRow extends RecurrenceRuleRow {
 }
 
 interface AccountSummaryRow extends AccountRow {
+  previous_balance: number;
   real_balance: number;
   pointed_balance: number;
   month_count: number;
@@ -722,6 +751,10 @@ function monthBounds({ year, month }: MonthRef): [string, string] {
   const start = `${year}-${pad(month + 1)}-01`;
   const end = month === 11 ? `${year + 1}-01-01` : `${year}-${pad(month + 2)}-01`;
   return [start, end];
+}
+
+function daysInMonth({ year, month }: MonthRef): number {
+  return new Date(year, month + 1, 0).getDate();
 }
 
 /** `[1 January, 1 January of next year)` as ISO dates, like `monthBounds` for a whole year. */
@@ -1461,16 +1494,19 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
            + COALESCE(SUM(CASE WHEN t.status <> 'fantome' THEN t.amount END), 0) AS real_balance,
          a.initial_balance
            + COALESCE(SUM(CASE WHEN t.status = 'pointe' THEN t.amount END), 0) AS pointed_balance,
+         a.initial_balance
+           + COALESCE(SUM(CASE WHEN t.status <> 'fantome' AND t.operation_date < ? THEN t.amount END), 0) AS previous_balance,
          COUNT(CASE WHEN t.operation_date >= ? AND t.operation_date < ? THEN 1 END) AS month_count
        FROM accounts a LEFT JOIN transactions t ON t.account_id = a.id
        GROUP BY a.id
        ORDER BY a.created_at ASC, a.id ASC`,
-      [start, end]
+      [start, start, end]
     );
     return rows.map((row) => ({
       account: toAccount(row),
       realBalance: roundToCents(row.real_balance),
       pointedBalance: roundToCents(row.pointed_balance),
+      previousMonthBalance: roundToCents(row.previous_balance),
       monthOperationCount: row.month_count,
     }));
   }
@@ -1537,6 +1573,208 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       importance,
       amount: roundToCents(rows.find((row) => row.importance === importance)?.amount ?? 0),
     }));
+  }
+
+  /**
+   * Épargne versée of a month (trésorerie): the inter-account movements that went into the
+   * savings accounts, minus those that came out of them. Prévisions and interest (which are
+   * not movements) are left out; a movement between two savings accounts nets to zero.
+   */
+  async function getSavingsContributed(month: MonthRef): Promise<number> {
+    const [start, end] = monthBounds(month);
+    const row = await db.getFirstAsync<{ total: number | null }>(
+      `SELECT SUM(t.amount) AS total
+       FROM transactions t JOIN accounts a ON a.id = t.account_id
+       WHERE a.archived = 0 AND a.is_savings = 1 AND t.mirror_transaction_id IS NOT NULL
+         AND t.status IN ('non_pointe', 'pointe')
+         AND t.operation_date >= ? AND t.operation_date < ?`,
+      [start, end]
+    );
+    return roundToCents(row?.total ?? 0);
+  }
+
+  /**
+   * Comparaison à date (bilan comptable): what was spent from the 1st to day J of the month,
+   * against the average of the up-to-3 previous months over the same days. J is today for the
+   * current month and the whole month for a past one; a shorter month stops at its last day.
+   * Months before the first operation have no history and are not averaged; without any,
+   * or for a month to come, there is nothing to compare (`null`).
+   */
+  async function getDateComparison(month: MonthRef): Promise<DateComparison | null> {
+    const today = now();
+    const todayIndex = today.getFullYear() * 12 + today.getMonth();
+    const index = month.year * 12 + month.month;
+    if (index > todayIndex) return null;
+    const day = index === todayIndex ? today.getDate() : daysInMonth(month);
+
+    const first = await db.getFirstAsync<{ first: string | null }>(
+      `SELECT MIN(t.operation_date) AS first
+       FROM transactions t JOIN accounts a ON a.id = t.account_id
+       WHERE a.archived = 0 AND t.status <> 'prevision'`
+    );
+    if (!first?.first) return null;
+    const firstIndex = Number(first.first.slice(0, 4)) * 12 + Number(first.first.slice(5, 7)) - 1;
+    const previous: MonthRef[] = [];
+    for (let back = 1; back <= 3; back++) {
+      if (index - back >= firstIndex) previous.push({ year: Math.floor((index - back) / 12), month: (index - back) % 12 });
+    }
+    if (previous.length === 0) return null;
+
+    const spentUntilDay = (target: MonthRef) => {
+      const [start] = monthBounds(target);
+      const last = `${target.year}-${pad2(target.month + 1)}-${pad2(Math.min(day, daysInMonth(target)))}`;
+      return db.getAllAsync<{
+        category_id: number | null;
+        category_name: string | null;
+        importance: Importance | null;
+        amount: number;
+      }>(
+        `SELECT p.category_id AS category_id, c.name AS category_name, p.importance AS importance,
+           SUM(-p.amount) AS amount
+         FROM (${BILAN_PARTS}) p
+         JOIN accounts a ON a.id = p.account_id
+         LEFT JOIN categories c ON c.id = p.category_id
+         WHERE a.archived = 0 AND p.amount < 0 AND p.operation_date >= ? AND p.operation_date <= ?
+         GROUP BY p.category_id, p.importance`,
+        [start, last]
+      );
+    };
+
+    const lines = new Map<number | null, { name: string | null; current: number; past: number }>();
+    const levels = new Map<Importance, { current: number; past: number }>(
+      IMPORTANCE_LEVELS.map((level) => [level, { current: 0, past: 0 }])
+    );
+    let currentTotal = 0;
+    let pastTotal = 0;
+    const accumulate = (rows: Awaited<ReturnType<typeof spentUntilDay>>, side: 'current' | 'past') => {
+      for (const row of rows) {
+        const line = lines.get(row.category_id) ?? { name: row.category_name, current: 0, past: 0 };
+        line[side] += row.amount;
+        lines.set(row.category_id, line);
+        if (row.importance) levels.get(row.importance)![side] += row.amount;
+        if (side === 'current') currentTotal += row.amount;
+        else pastTotal += row.amount;
+      }
+    };
+    accumulate(await spentUntilDay(month), 'current');
+    for (const target of previous) accumulate(await spentUntilDay(target), 'past');
+
+    const count = previous.length;
+    return {
+      day,
+      monthsCompared: count,
+      total: { current: roundToCents(currentTotal), average: roundToCents(pastTotal / count) },
+      byCategory: [...lines.entries()]
+        .map(([categoryId, line]) => ({
+          categoryId,
+          name: line.name,
+          current: roundToCents(line.current),
+          average: roundToCents(line.past / count),
+        }))
+        .sort((a, b) => b.current - a.current || b.average - a.average),
+      byImportance: IMPORTANCE_LEVELS.map((importance) => ({
+        importance,
+        current: roundToCents(levels.get(importance)!.current),
+        average: roundToCents(levels.get(importance)!.past / count),
+      })),
+    };
+  }
+
+  /**
+   * The Bloc Hors bilan: treasury flows that never reach the bilan, for a month (active
+   * accounts) or a year (every account). Advances and their reimbursements are read through
+   * the Avancé category, whole operation or portion; a movement between accounts counts once.
+   */
+  async function getOffBalanceSummary(period: { month: MonthRef } | { year: number }): Promise<OffBalanceSummary> {
+    const [start, end] = 'month' in period ? monthBounds(period.month) : yearBounds(period.year);
+    const rows = await db.getAllAsync<{ kind: string; out: number | null; inn: number | null }>(
+      `SELECT p.kind AS kind,
+         SUM(CASE WHEN p.amount < 0 THEN -p.amount END) AS out,
+         SUM(CASE WHEN p.amount > 0 THEN p.amount END) AS inn
+       FROM (
+         SELECT t.account_id AS account_id, t.operation_date AS operation_date, t.amount AS amount,
+           CASE WHEN t.mirror_transaction_id IS NOT NULL THEN 'transfer'
+                WHEN c.system_role = 'avance' THEN 'avance' ELSE 'other' END AS kind
+         FROM transactions t LEFT JOIN categories c ON c.id = t.category_id
+         WHERE t.status IN ('non_pointe', 'pointe') AND t.off_balance = 1
+           AND NOT EXISTS (SELECT 1 FROM transaction_splits x WHERE x.transaction_id = t.id)
+         UNION ALL
+         SELECT t.account_id, t.operation_date, s.amount,
+           CASE WHEN sc.system_role = 'avance' THEN 'avance' ELSE 'other' END
+         FROM transaction_splits s
+         JOIN transactions t ON t.id = s.transaction_id
+         LEFT JOIN categories sc ON sc.id = s.category_id
+         WHERE t.status IN ('non_pointe', 'pointe') AND (sc.system_role = 'avance' OR t.off_balance = 1)
+       ) p JOIN accounts a ON a.id = p.account_id
+       WHERE ${'month' in period ? 'a.archived = 0 AND' : ''} p.operation_date >= ? AND p.operation_date < ?
+       GROUP BY p.kind`,
+      [start, end]
+    );
+    const of = (kind: string) => rows.find((row) => row.kind === kind);
+    return {
+      advances: roundToCents(of('avance')?.out ?? 0),
+      reimbursements: roundToCents(of('avance')?.inn ?? 0),
+      transfers: roundToCents(of('transfer')?.out ?? 0),
+      others: roundToCents((of('other')?.out ?? 0) + (of('other')?.inn ?? 0)),
+    };
+  }
+
+  /**
+   * Dépenses, recettes and monthly average of the Bilan annuel: the bilan comptable's rules,
+   * on every account. The average runs over the months gone by, like the category lines.
+   */
+  async function getYearSummary(year: number): Promise<YearSummary> {
+    const row = await db.getFirstAsync<{ expenses: number | null; income: number | null }>(
+      `SELECT SUM(CASE WHEN p.amount < 0 THEN -p.amount END) AS expenses,
+         SUM(CASE WHEN p.amount > 0 THEN p.amount END) AS income
+       FROM (${BILAN_PARTS}) p
+       WHERE p.operation_date >= ? AND p.operation_date < ?`,
+      yearBounds(year)
+    );
+    const expenses = roundToCents(row?.expenses ?? 0);
+    const lastMonth = lastCountedMonth(year);
+    return {
+      expenses,
+      income: roundToCents(row?.income ?? 0),
+      monthlyAverage: lastMonth === null ? 0 : roundToCents(expenses / (lastMonth + 1)),
+    };
+  }
+
+  /**
+   * Réel and pointé balances per account and in total, at the end of a past year or today for
+   * the current one (a year to come shows today too). An archived account stays in the years
+   * it was used.
+   */
+  async function getYearBalances(year: number): Promise<YearBalances> {
+    const [start, end] = yearBounds(year);
+    const past = year < now().getFullYear();
+    const cutoff = past ? end : '9999-12-31';
+    const rows = await db.getAllAsync<AccountRow & { real: number; pointed: number; year_count: number }>(
+      `SELECT a.*,
+         a.initial_balance
+           + COALESCE(SUM(CASE WHEN t.status <> 'fantome' AND t.operation_date < ? THEN t.amount END), 0) AS real,
+         a.initial_balance
+           + COALESCE(SUM(CASE WHEN t.status = 'pointe' AND t.operation_date < ? THEN t.amount END), 0) AS pointed,
+         COUNT(CASE WHEN t.operation_date >= ? AND t.operation_date < ? THEN 1 END) AS year_count
+       FROM accounts a LEFT JOIN transactions t ON t.account_id = a.id
+       GROUP BY a.id
+       ORDER BY a.created_at ASC, a.id ASC`,
+      [cutoff, cutoff, start, end]
+    );
+    const accounts = rows
+      .filter((row) => (past ? row.archived === 0 || row.year_count > 0 : row.archived === 0))
+      .map((row) => ({
+        account: toAccount(row),
+        realBalance: roundToCents(row.real),
+        pointedBalance: roundToCents(row.pointed),
+      }));
+    return {
+      accounts,
+      total: {
+        realBalance: roundToCents(accounts.reduce((sum, a) => sum + a.realBalance, 0)),
+        pointedBalance: roundToCents(accounts.reduce((sum, a) => sum + a.pointedBalance, 0)),
+      },
+    };
   }
 
   /**
@@ -1622,112 +1860,6 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       flow.totalIncome = roundToCents(flow.income.reduce((sum, v) => sum + v, 0));
     }
     return [...flows.values()];
-  }
-
-  /**
-   * Net change of each account per month of `year` (#36, handoff §6.7):
-   * the operations done (non pointées and pointées), like the Dépenses
-   * and Recettes tables — no forecasts, no accounting flows. An archived
-   * account stays in the Bilan of the years it was used, and only those.
-   */
-  async function getNetChangesByMonth(year: number): Promise<AccountYearChanges[]> {
-    const rows = await db.getAllAsync<AccountRow & { month: string | null; change: number | null; count: number }>(
-      `SELECT a.*, substr(t.operation_date, 6, 2) AS month,
-         SUM(CASE WHEN t.status IN ('non_pointe', 'pointe') THEN t.amount END) AS change,
-         COUNT(t.id) AS count
-       FROM accounts a
-       LEFT JOIN transactions t ON t.account_id = a.id
-         AND t.operation_date >= ? AND t.operation_date < ?
-       GROUP BY a.id, month
-       ORDER BY a.created_at ASC, a.id ASC`,
-      yearBounds(year)
-    );
-
-    const byAccount = new Map<number, AccountYearChanges & { count: number }>();
-    for (const row of rows) {
-      let entry = byAccount.get(row.id);
-      if (!entry) {
-        entry = { account: toAccount(row), changes: Array<number>(12).fill(0), total: 0, count: 0 };
-        byAccount.set(row.id, entry);
-      }
-      if (row.month !== null) {
-        entry.changes[Number(row.month) - 1] = roundToCents(row.change ?? 0);
-        entry.count += row.count;
-      }
-    }
-    return [...byAccount.values()]
-      .filter((entry) => !entry.account.archived || entry.count > 0)
-      .map(({ account, changes }) => ({
-        account,
-        changes,
-        total: roundToCents(changes.reduce((sum, v) => sum + v, 0)),
-      }));
-  }
-
-  /**
-   * Each account's pointé and réel balances at the end of every month of
-   * `year` (#25), same rules as `listAccountSummaries` and the same
-   * accounts as `getNetChangesByMonth`. SQL sums the history before
-   * the year and each month; only the 12-step running total is done here.
-   */
-  async function getBalanceSeries(year: number): Promise<AccountYearBalances[]> {
-    const [start, end] = yearBounds(year);
-    const rows = await db.getAllAsync<
-      AccountRow & { month: string | null; real: number | null; pointed: number | null; count: number }
-    >(
-      `SELECT a.*,
-         CASE WHEN t.operation_date < ? THEN NULL ELSE substr(t.operation_date, 6, 2) END AS month,
-         SUM(CASE WHEN t.status <> 'fantome' THEN t.amount END) AS real,
-         SUM(CASE WHEN t.status = 'pointe' THEN t.amount END) AS pointed,
-         COUNT(t.id) AS count
-       FROM accounts a
-       LEFT JOIN transactions t ON t.account_id = a.id AND t.operation_date < ?
-       GROUP BY a.id, month
-       ORDER BY a.created_at ASC, a.id ASC`,
-      [start, end]
-    );
-
-    type Sums = { pointed: number; real: number };
-    const byAccount = new Map<
-      number,
-      { account: Account; opening: Sums; monthly: Sums[]; yearCount: number }
-    >();
-    for (const row of rows) {
-      let entry = byAccount.get(row.id);
-      if (!entry) {
-        entry = {
-          account: toAccount(row),
-          opening: { pointed: row.initial_balance, real: row.initial_balance },
-          monthly: Array.from({ length: 12 }, () => ({ pointed: 0, real: 0 })),
-          yearCount: 0,
-        };
-        byAccount.set(row.id, entry);
-      }
-      const sums: Sums = { pointed: row.pointed ?? 0, real: row.real ?? 0 };
-      if (row.month === null) {
-        entry.opening = {
-          pointed: entry.opening.pointed + sums.pointed,
-          real: entry.opening.real + sums.real,
-        };
-      } else {
-        entry.monthly[Number(row.month) - 1] = sums;
-        entry.yearCount += row.count;
-      }
-    }
-
-    return [...byAccount.values()]
-      .filter((entry) => !entry.account.archived || entry.yearCount > 0)
-      .map(({ account, opening, monthly }) => {
-        let { pointed, real } = opening;
-        const series: AccountYearBalances = { account, pointed: [], real: [] };
-        for (const month of monthly) {
-          pointed += month.pointed;
-          real += month.real;
-          series.pointed.push(roundToCents(pointed));
-          series.real.push(roundToCents(real));
-        }
-        return series;
-      });
   }
 
   /** Advances waiting to be paid back: expenses and portions in Avancé, `en_attente`, not yet reimbursed. */
@@ -2578,10 +2710,13 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     getBalanceTotals,
     getMonthSummary,
     getImportanceBreakdown,
+    getSavingsContributed,
+    getDateComparison,
+    getOffBalanceSummary,
+    getYearSummary,
+    getYearBalances,
     getYearStatus,
     getCategoryFlowsByMonth,
-    getNetChangesByMonth,
-    getBalanceSeries,
     getPendingAdvances,
     listPendingAdvances,
     markAdvanceReimbursed,

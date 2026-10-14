@@ -119,72 +119,35 @@ describe('dataService — bilan annuel (#25)', () => {
     });
   });
 
-  describe('variation nette par compte et par mois (§6.7)', () => {
-    it('sums the operations done each month, account by account — not forecasts nor accounting flows', async () => {
-      const livret = (await dataService.createAccount({ name: 'Livret A', initialBalance: 0 })).id;
-      await record('Restaurant', -10, '2026-01-05');
-      await record('Salaire/Intérêts/Avantages', 40.5, '2026-01-06', 'pointe');
-      await record('Restaurant', -99, '2026-01-06', 'prevision');
-      await record('Virement', -300, '2026-01-07', 'fantome');
-      await record('Restaurant', -12.25, '2026-12-31', 'pointe');
-      await record('Restaurant', -10, '2025-12-31');
-      await record('Salaire/Intérêts/Avantages', 3, '2026-06-30', 'pointe', livret);
-
-      const changes = await dataService.getNetChangesByMonth(2026);
-
-      expect(changes.map((c) => [c.account.name, c.changes, c.total])).toEqual([
-        ['Compte courant', at({ 0: 30.5, 11: -12.25 }), 18.25],
-        ['Livret A', at({ 5: 3 }), 3],
-      ]);
-    });
-
+  describe('soldes de l’année', () => {
     it('keeps an archived account only if it had operations that year', async () => {
-      const ancien = (await dataService.createAccount({ name: 'Ancien livret', initialBalance: 0 })).id;
-      const vide = (await dataService.createAccount({ name: 'Compte fermé', initialBalance: 0 })).id;
-      const prevu = (await dataService.createAccount({ name: 'Compte prévu', initialBalance: 0 })).id;
-      await record('Restaurant', -10, '2026-03-01', 'pointe', ancien);
-      await record('Restaurant', -10, '2025-03-01', 'pointe', vide);
-      await record('Restaurant', -10, '2026-03-01', 'prevision', prevu);
-      await dataService.archiveAccount(ancien);
-      await dataService.archiveAccount(vide);
-      await dataService.archiveAccount(prevu);
-
-      const changes = await dataService.getNetChangesByMonth(2026);
-
-      expect(changes.map((c) => [c.account.name, c.total])).toEqual([
-        ['Compte courant', 0],
-        ['Ancien livret', -10],
-        ['Compte prévu', 0],
-      ]);
-    });
-  });
-
-  describe('soldes pointés et réels sur l’année', () => {
-    it('gives each account its balances at the end of every month, history included', async () => {
-      await record('Salaire/Intérêts/Avantages', 500, '2025-11-20', 'pointe');
-      await record('Restaurant', -40, '2026-02-10', 'pointe');
-      await record('Restaurant', -25, '2026-02-18');
-      await record('Loisir', -100, '2026-04-02', 'prevision');
-      await record('Virement', -300, '2026-04-03', 'fantome');
-
-      const [series] = await dataService.getBalanceSeries(2026);
-
-      expect(series.account.name).toBe('Compte courant');
-      expect(series.pointed).toEqual([1500, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1460, 1460]);
-      expect(series.real).toEqual([1500, 1435, 1435, 1335, 1335, 1335, 1335, 1335, 1335, 1335, 1335, 1335]);
-    });
-
-    it('keeps the same accounts as the net changes', async () => {
       const ancien = (await dataService.createAccount({ name: 'Ancien livret', initialBalance: 50 })).id;
       await dataService.createAccount({ name: 'Compte fermé', initialBalance: 0 }).then((a) =>
         dataService.archiveAccount(a.id)
       );
-      await record('Restaurant', -10, '2026-03-01', 'pointe', ancien);
+      await record('Restaurant', -10, '2025-03-01', 'pointe', ancien);
       await dataService.archiveAccount(ancien);
 
-      const series = await dataService.getBalanceSeries(2026);
+      const past = await dataService.getYearBalances(2025);
+      expect(past.accounts.map((a) => [a.account.name, a.realBalance])).toEqual([
+        ['Compte courant', 1000],
+        ['Ancien livret', 40],
+      ]);
+      expect(past.total.realBalance).toBe(1040);
 
-      expect(series.map((s) => s.account.name)).toEqual(['Compte courant', 'Ancien livret']);
+      // An archived account is out of today's balances, like the total of Accueil.
+      const current = await dataService.getYearBalances(new Date().getFullYear());
+      expect(current.accounts.map((a) => a.account.name)).toEqual(['Compte courant']);
+    });
+
+    it('leaves a Fantôme out of both balances and counts a Prévision in the real one only', async () => {
+      await record('Restaurant', -40, '2025-02-10', 'pointe');
+      await record('Loisir', -100, '2025-04-02', 'prevision');
+      await record('Virement', -300, '2025-04-03', 'fantome');
+
+      const [account] = (await dataService.getYearBalances(2025)).accounts;
+      expect(account.pointedBalance).toBe(960);
+      expect(account.realBalance).toBe(860);
     });
   });
 

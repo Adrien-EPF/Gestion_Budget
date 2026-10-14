@@ -1,4 +1,5 @@
 import { act, screen, within } from '@testing-library/react-native';
+import { monthName } from '../navigation/formatMonthLabel';
 import type { DataService } from '../services/dataService';
 import { toIsoDate } from '../utils/dates';
 import { formatAmount } from '../utils/formatAmount';
@@ -27,6 +28,86 @@ describe('Écran Accueil', () => {
 
   const add = (input: Omit<Parameters<DataService['createTransaction']>[0], 'accountId'>) =>
     seed(app.dataService, (s) => s.createTransaction({ accountId, ...input }));
+
+  describe('deux sections : trésorerie et comptable', () => {
+    const monthsAgo = (count: number) => toIsoDate(new Date(new Date().getFullYear(), new Date().getMonth() - count, 1));
+    const previousMonthName = monthName((new Date().getMonth() + 11) % 12).toLowerCase();
+
+    it('opens on the trésorerie, then the comptable, then the budgets and the operations', async () => {
+      await add({ operationDate: today, amount: -5, comment: 'Café' });
+
+      const titles = screen.getAllByRole('header').map((h) => h.props.children);
+      expect(titles.filter((t) => t === 'Trésorerie' || t === 'Comptable')).toEqual(['Trésorerie', 'Comptable']);
+    });
+
+    it('gives the balance at the end of the previous month, per account and in total', async () => {
+      await add({ operationDate: monthsAgo(1), amount: -100, status: 'pointe' });
+      await add({ operationDate: today, amount: -30 });
+
+      expect(screen.getByTestId('home-total-previous').props.children).toBe(
+        `Fin ${previousMonthName} ${formatAmount(900)}`
+      );
+      // On the account card as well.
+      expect(screen.getAllByText(plain(`Fin ${previousMonthName} ${formatAmount(900)}`))).toHaveLength(2);
+    });
+
+    it('shows the épargne versée only once an account is a savings account', async () => {
+      let livretId = 0;
+      await seed(app.dataService, async (s) => {
+        livretId = (await s.createAccount({ name: 'Livret A', initialBalance: 0 })).id;
+      });
+      expect(screen.queryByText('Épargne versée')).toBeNull();
+
+      await seed(app.dataService, async (s) => {
+        await s.setAccountSavings(livretId, true);
+        const virement = (await s.listCategories()).find((c) => c.name === 'Mouvement inter-compte')!;
+        await s.createTransaction({
+          accountId,
+          operationDate: today,
+          amount: -200,
+          categoryId: virement.id,
+          transferToAccountId: livretId,
+        });
+      });
+
+      expect(screen.getByText('Épargne versée')).toBeTruthy();
+      expect(screen.getByTestId('home-savings').props.children).toBe(formatAmount(200, { signed: true }));
+    });
+
+    it('compares the month so far with the previous months, without a verdict, and details it on tap', async () => {
+      await add({ operationDate: monthsAgo(1), amount: -90, status: 'pointe' });
+      await add({ operationDate: today, amount: -40, status: 'pointe' });
+
+      const sentence = screen.getByTestId('home-comparison-summary').props.children as string;
+      expect(plain(sentence)).toMatch(/^40 € au \d+, contre 90 € en moyenne à cette date \(sur 1 mois\)$/);
+      expect(screen.queryByTestId('home-comparison-detail')).toBeNull();
+
+      await press(screen.getByRole('button', { name: 'Détail de la comparaison' }));
+
+      const detail = within(screen.getByTestId('home-comparison-detail'));
+      expect(detail.getByText('Par importance')).toBeTruthy();
+      expect(detail.getByText('Essentiel')).toBeTruthy();
+      expect(detail.getByText('Par catégorie')).toBeTruthy();
+      expect(detail.getByText('Sans catégorie')).toBeTruthy();
+    });
+
+    it('hides the comparison without a previous month of history', async () => {
+      await add({ operationDate: today, amount: -40, status: 'pointe' });
+      expect(screen.queryByTestId('home-comparison')).toBeNull();
+    });
+
+    it('totals what stays outside the bilan in its own block', async () => {
+      expect(screen.queryByTestId('home-off-balance')).toBeNull();
+
+      await add({ operationDate: today, amount: -15, offBalance: true, status: 'pointe' });
+      await add({ operationDate: today, amount: -5 });
+
+      const block = within(await screen.findByTestId('home-off-balance'));
+      expect(block.getByLabelText(`Autres opérations hors bilan, ${formatAmount(15)}`)).toBeTruthy();
+      expect(block.queryByText('Avances versées')).toBeNull();
+      expect(screen.getByTestId('home-month-expenses').props.children).toBe(formatAmount(5));
+    });
+  });
 
   it('shows the real balance, the pointed balance and one card per account', async () => {
     await add({ operationDate: today, amount: -100, status: 'pointe', comment: 'Essence' });

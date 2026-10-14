@@ -248,6 +248,16 @@ describe('Écran Comptes', () => {
       expect(screen.getByLabelText('Renommer')).toBeTruthy();
     });
 
+    it('marks an account as a savings account, and shows it again as such', async () => {
+      await press(screen.getByLabelText('Actions du compte Compte courant'));
+      expect(screen.getByRole('switch', { name: 'Compte épargne' }).props.accessibilityState.checked).toBe(false);
+
+      await press(screen.getByRole('switch', { name: 'Compte épargne' }));
+
+      expect((await app.dataService.getAccount(accountId))?.isSavings).toBe(true);
+      expect(screen.getByRole('switch', { name: 'Compte épargne' }).props.accessibilityState.checked).toBe(true);
+    });
+
     it('renames an account', async () => {
       await press(screen.getByLabelText('Actions du compte Compte courant'));
       await press(screen.getByLabelText('Renommer'));

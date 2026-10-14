@@ -47,7 +47,7 @@ Cas d'usage clés : saisie rapide d'une opération, pointage/rapprochement banca
 6. **Avances ("Avancé")** : portion de split marquable comme avance, quel que soit le compte ; vue dédiée des avances en attente.
 7. **Budgets prévisionnels** : par catégorie et par mois, report du reliquat activable/désactivable indépendamment par budget, suivi visuel non alarmiste même en dépassement.
 8. **Transactions récurrentes** : règle (compte, montant, catégorie, fréquence, date de référence), activation explicite en mode automatique ; occurrences modifiables/supprimables individuellement sans affecter la règle.
-9. **Tableau de bord annuel** : détail dépenses/recettes par catégorie et par mois (+ cumul annuel), variation nette par compte/mois (opérations réalisées, sans les prévisions), soldes pointés et réels sur toute la période.
+9. **Tableau de bord annuel** : section Trésorerie (soldes réel et pointé par compte et au total) et section Comptable (dépenses, recettes, moyenne mensuelle, importance, dépenses par catégorie avec détail mensuel, budgets prévus/réalisés, bloc Hors bilan).
 10. **Visualisations** : répartition des dépenses par catégorie, évolution du solde dans le temps, comparaison budget prévisionnel vs réalisé.
 11. **Notifications** (ton toujours détendu, jamais anxiogène) : rappel amical de pointage, information budget présentée comme donnée factuelle plutôt qu'alerte de dépassement.
 12. **Export / sauvegarde** : fichier de sauvegarde technique réimportable + export Excel/CSV lisible, proposés séparément.

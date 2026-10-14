@@ -7,6 +7,7 @@ import { parseMoneyInput, toMoneyInput } from '../utils/amountInput';
 import { BottomSheet } from './BottomSheet';
 import { Button } from './Button';
 import { MenuRow } from './MenuRow';
+import { Switch } from './Switch';
 import { TextField } from './TextField';
 
 const NAME_REQUIRED = 'Donne un nom à ce compte.';
@@ -89,6 +90,7 @@ function AccountActions({ account, onClose }: { account: Account; onClose: () =>
   const [name, setName] = useState(account.name);
   const [balance, setBalance] = useState(toMoneyInput(account.initialBalance));
   const [error, setError] = useState<string | null>(null);
+  const [isSavings, setIsSavings] = useState(account.isSavings);
 
   const back = () => {
     setError(null);
@@ -113,6 +115,11 @@ function AccountActions({ account, onClose }: { account: Account; onClose: () =>
     }
     await dataService.updateInitialBalance(account.id, initialBalance);
     onClose();
+  };
+
+  const toggleSavings = async (value: boolean) => {
+    setIsSavings(value);
+    await dataService.setAccountSavings(account.id, value);
   };
 
   const archive = async () => {
@@ -188,6 +195,15 @@ function AccountActions({ account, onClose }: { account: Account; onClose: () =>
       <View style={styles.menu}>
         <MenuRow label="Renommer" onPress={() => setMode('rename')} />
         <MenuRow label="Modifier le solde initial" onPress={() => setMode('balance')} />
+        <View style={styles.switchRow}>
+          <View style={styles.switchText}>
+            <Text style={[textStyle('bodyLg'), styles.title]}>Compte épargne</Text>
+            <Text style={[textStyle('bodySm'), styles.body]}>
+              Ses virements comptent dans l’épargne versée.
+            </Text>
+          </View>
+          <Switch value={isSavings} onValueChange={toggleSavings} accessibilityLabel="Compte épargne" />
+        </View>
         <MenuRow label="Archiver" onPress={() => setMode('archive')} />
         <MenuRow label="Supprimer" onPress={() => setMode('delete')} />
       </View>
@@ -215,5 +231,18 @@ const styles = StyleSheet.create({
   },
   menu: {
     marginHorizontal: -spacing.xl,
+  },
+  switchRow: {
+    minHeight: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    borderTopWidth: 1,
+    borderTopColor: colors.hairline,
+  },
+  switchText: {
+    flex: 1,
   },
 });

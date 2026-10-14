@@ -1,42 +1,43 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button } from '../components/Button';
-import { BalanceLineChart } from '../components/charts/BalanceLineChart';
 import { BudgetYearChart } from '../components/charts/BudgetYearChart';
 import { CategoryBreakdownChart } from '../components/charts/CategoryBreakdownChart';
-import { groupExpenses, type ExpenseGroup } from '../components/charts/chartGeometry';
+import { groupExpenses } from '../components/charts/chartGeometry';
 import { Chips } from '../components/Chips';
 import { ImportanceBreakdownCard } from '../components/ImportanceBreakdownCard';
 import { ModalScreenHeader } from '../components/ModalScreenHeader';
-import { YearTable, type YearTableRow } from '../components/YearTable';
+import { OffBalanceCard } from '../components/OffBalanceCard';
 import { monthName } from '../navigation/formatMonthLabel';
-import type { BudgetYearOverview, CategoryYearFlow, YearStatus } from '../services/dataService';
+import type { BudgetYearOverview, YearStatus } from '../services/dataService';
 import { useServiceQuery } from '../services/DataServiceContext';
-import { CHART_ACCOUNT_COLORS, CHART_CATEGORY_COLORS, chartColor, colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
+import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { formatAmount } from '../utils/formatAmount';
+
+/** Past this many categories, the rest of the spending folds into « Autres ». */
+const TOP_CATEGORIES = 6;
 
 interface YearReportScreenProps {
   /** The year Accueil was showing; the selector moves from there. */
   initialYear: number;
   onClose: () => void;
-  /** « Créer un budget » when no budget is followed that year: leaves the Bilan for Budgets. */
-  onCreateBudget: () => void;
 }
 
 /**
- * Bilan annuel (#25, handoff §6.7) — the Bilan sheet of the old Excel,
- * reached from Accueil. A full-screen `Modal` owned by Accueil, like the
- * Réglages sub-screens, rather than a 6th tab. Each chart sits in its own
- * card above the month-by-month table it sums up.
+ * Bilan annuel (#25, #50) — the Bilan sheet of the old Excel, reached from Accueil, in
+ * two sections like Accueil: Trésorerie (the balances) on top, Comptable (what was
+ * spent and earned) below. A full-screen `Modal` owned by Accueil, like the Réglages
+ * sub-screens, rather than a 6th tab.
  */
-export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearReportScreenProps) {
+export function YearReportScreen({ initialYear, onClose }: YearReportScreenProps) {
   const [year, setYear] = useState(initialYear);
   const status = useServiceQuery((s) => s.getYearStatus(year), [year]);
   const flows = useServiceQuery((s) => s.getCategoryFlowsByMonth(year), [year]);
-  const changes = useServiceQuery((s) => s.getNetChangesByMonth(year), [year]);
-  const balances = useServiceQuery((s) => s.getBalanceSeries(year), [year]);
+  const balances = useServiceQuery((s) => s.getYearBalances(year), [year]);
+  const summary = useServiceQuery((s) => s.getYearSummary(year), [year]);
   const budgetYear = useServiceQuery((s) => s.getBudgetYear(year), [year]);
   const importanceShares = useServiceQuery((s) => s.getImportanceBreakdown({ year }), [year]);
+  const offBalance = useServiceQuery((s) => s.getOffBalanceSummary({ year }), [year]);
 
   // The year Accueil was on stays reachable, even outside the years with data.
   const firstYear = Math.min(status?.firstYear ?? year, initialYear);
@@ -44,31 +45,14 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
   const canGoBack = status !== undefined && year > firstYear;
   const canGoForward = status !== undefined && year < lastYear;
 
-  const accountColor = new Map(
-    (balances ?? []).map(({ account }, rank) => [account.id, chartColor(CHART_ACCOUNT_COLORS, rank)])
-  );
   const expenseGroups = groupExpenses(
-    (flows ?? []).map((f) => ({ name: f.categoryName, months: f.expenses, total: f.totalExpenses }))
+    (flows ?? []).map((f) => ({ name: f.categoryName, months: f.expenses, total: f.totalExpenses })),
+    TOP_CATEGORIES
   );
-  const incomeRows = rankedIncomeRows(flows ?? []);
-  const changeRows: YearTableRow[] = (changes ?? []).map(({ account, changes: values, total }) => ({
-    key: account.name,
-    label: account.name,
-    color: accountColor.get(account.id),
-    values,
-    total,
-  }));
-  const balanceRows: YearTableRow[] = (balances ?? []).map(({ account, real }) => ({
-    key: account.name,
-    label: account.name,
-    color: accountColor.get(account.id),
-    values: real,
-  }));
-  const forecastFrom = status?.lastMonth === null ? 0 : (status?.lastMonth ?? 11) + 1;
 
   return (
     <Modal visible animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-      <View style={styles.root}>
+      <View testID="year-report" style={styles.root}>
         <ModalScreenHeader title="Bilan annuel" testID="year-report-title" onClose={onClose} />
 
         <ScrollView contentContainerStyle={styles.content}>
@@ -87,7 +71,7 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
             <View style={[styles.card, styles.emptyYear]}>
               <Text style={[textStyle('headingSm'), styles.ink]}>{`Aucune opération en ${year}.`}</Text>
               <Text style={[textStyle('bodyMd'), styles.mute, styles.centered]}>
-                Les graphiques et les tableaux apparaîtront dès la première opération saisie sur cette année.
+                Les soldes et les totaux apparaîtront dès la première opération saisie sur cette année.
               </Text>
               {canGoForward ? (
                 <Button label={`Voir ${year + 1}`} variant="ghost" onPress={() => setYear(year + 1)} />
@@ -95,38 +79,69 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
             </View>
           ) : status ? (
             <>
-              <Section title="Soldes en fin de mois">
-                {balances && balances.length > 0 ? (
-                  <>
-                    <BalanceLineChart
-                      key={year}
-                      testID="balance-chart"
-                      accounts={balances.map(({ account, real, pointed }) => ({
-                        id: account.id,
-                        name: account.name,
-                        color: accountColor.get(account.id)!,
-                        real,
-                        pointed,
-                      }))}
-                      lastMonth={status.lastMonth}
+              <Section title="Trésorerie" level="main">
+                {balances && balances.accounts.length > 0 ? (
+                  <View testID="year-treasury" style={styles.card}>
+                    <Text style={[textStyle('bodySm'), styles.ash]}>
+                      {year < status.currentYear ? `Au 31 décembre ${year}` : 'Aujourd’hui'}
+                    </Text>
+                    {balances.accounts.map(({ account, realBalance, pointedBalance }) => (
+                      <BalanceLine
+                        key={account.id}
+                        testID={`year-treasury-account-${account.id}`}
+                        label={account.name}
+                        real={realBalance}
+                        pointed={pointedBalance}
+                      />
+                    ))}
+                    <View style={styles.divider} />
+                    <BalanceLine
+                      testID="year-treasury-total"
+                      label="Total"
+                      real={balances.total.realBalance}
+                      pointed={balances.total.pointedBalance}
+                      bold
                     />
-                    <YearTable
-                      testID="year-balances"
-                      heading="Solde réel"
-                      rows={balanceRows}
-                      format={formatAmount}
-                      showZeros
-                      forecastFrom={forecastFrom}
-                    />
-                  </>
+                  </View>
                 ) : (
-                  <EmptyCard text={`Aucun solde enregistré en ${year}.`} />
+                  <EmptyCard text="Aucun compte pour l’instant." />
                 )}
               </Section>
 
-              <Section title="Dépenses par catégorie">
-                {expenseGroups.length > 0 ? (
-                  <>
+              <Section title="Comptable" level="main">
+                {summary ? (
+                  <View testID="year-summary" style={[styles.card, styles.summary]}>
+                    <SummaryFigure
+                      testID="year-summary-expenses"
+                      label="Dépenses"
+                      amount={summary.expenses}
+                      color={colors.amountNegative}
+                    />
+                    <SummaryFigure
+                      testID="year-summary-income"
+                      label="Recettes"
+                      amount={summary.income}
+                      color={colors.amountPositive}
+                    />
+                    <SummaryFigure
+                      testID="year-summary-average"
+                      label="Dépenses par mois"
+                      amount={summary.monthlyAverage}
+                      color={colors.ink}
+                    />
+                  </View>
+                ) : null}
+
+                <Section title="Dépenses par importance">
+                  {importanceShares && importanceShares.some((share) => share.amount > 0) ? (
+                    <ImportanceBreakdownCard testID="year-importance" shares={importanceShares} />
+                  ) : (
+                    <EmptyCard text="Rien à répartir cette année." />
+                  )}
+                </Section>
+
+                <Section title="Dépenses par catégorie">
+                  {expenseGroups.length > 0 ? (
                     <CategoryBreakdownChart
                       key={year}
                       testID="expense-breakdown"
@@ -134,70 +149,66 @@ export function YearReportScreen({ initialYear, onClose, onCreateBudget }: YearR
                       groups={expenseGroups}
                       lastMonth={status.lastMonth ?? 11}
                     />
-                    <YearTable
-                      testID="year-expenses"
-                      heading="Catégorie"
-                      rows={withTotal(expenseGroups.map(groupRow))}
-                      format={formatAmount}
-                      showTotal
-                    />
-                  </>
-                ) : (
-                  <EmptyCard text="Aucune dépense cette année." />
-                )}
-              </Section>
+                  ) : (
+                    <EmptyCard text="Aucune dépense cette année." />
+                  )}
+                </Section>
 
-              <Section title="Dépenses par importance">
-                {importanceShares && importanceShares.some((share) => share.amount > 0) ? (
-                  <ImportanceBreakdownCard testID="year-importance" shares={importanceShares} />
-                ) : (
-                  <EmptyCard text="Rien à répartir cette année." />
-                )}
-              </Section>
-
-              <Section title="Budgets · prévu et réalisé">
                 {budgetYear && budgetYear.budgets.length > 0 ? (
-                  <BudgetSection key={year} overview={budgetYear} />
-                ) : (
-                  <View style={[styles.card, styles.emptyYear]}>
-                    <Text style={[textStyle('bodyMd'), styles.mute, styles.centered]}>Aucun budget suivi cette année.</Text>
-                    <Button label="Créer un budget" variant="ghost" onPress={onCreateBudget} />
-                  </View>
-                )}
-              </Section>
+                  <Section title="Budgets · prévu et réalisé">
+                    <BudgetSection key={year} overview={budgetYear} />
+                  </Section>
+                ) : null}
 
-              <Section title="Recettes par catégorie">
-                {incomeRows.length > 0 ? (
-                  <YearTable
-                    testID="year-income"
-                    heading="Catégorie"
-                    rows={withTotal(incomeRows)}
-                    format={formatAmount}
-                    showTotal
-                  />
-                ) : (
-                  <EmptyCard text="Aucune recette cette année." />
-                )}
-              </Section>
-
-              <Section title="Opérations par compte">
-                {changeRows.length > 0 ? (
-                  <YearTable
-                    testID="year-changes"
-                    heading="Variation nette"
-                    rows={changeRows}
-                    format={formatSignedAmount}
-                    showTotal
-                  />
-                ) : (
-                  <EmptyCard text="Aucun compte pour l’instant." />
-                )}
+                {offBalance && offBalance.advances + offBalance.reimbursements + offBalance.transfers + offBalance.others > 0 ? (
+                  <Section title="Hors bilan">
+                    <OffBalanceCard testID="year-off-balance" summary={offBalance} />
+                  </Section>
+                ) : null}
               </Section>
             </>
           ) : null}
         </ScrollView>
       </View>
     </Modal>
+  );
+}
+
+/** One account (or the total): its réel balance, and the pointé one in a quieter line. */
+function BalanceLine({
+  testID,
+  label,
+  real,
+  pointed,
+  bold = false,
+}: {
+  testID: string;
+  label: string;
+  real: number;
+  pointed: number;
+  bold?: boolean;
+}) {
+  return (
+    <View testID={testID} style={styles.balanceLine}>
+      <Text numberOfLines={1} style={[textStyle(bold ? 'bodyMdMedium' : 'bodyMd'), styles.ink, styles.balanceName]}>
+        {label}
+      </Text>
+      <View style={styles.balanceAmounts}>
+        <Text style={[textStyle('amountSm'), styles.ink]}>{formatAmount(real)}</Text>
+        <Text style={[textStyle('bodySm'), styles.ash]}>{`Pointé ${formatAmount(pointed)}`}</Text>
+      </View>
+    </View>
+  );
+}
+
+function SummaryFigure({ testID, label, amount, color }: { testID: string; label: string; amount: number; color: string }) {
+  return (
+    <View style={styles.figure}>
+      <Text style={[textStyle('caption'), styles.ash]}>{label}</Text>
+      <Text testID={testID} style={[textStyle('amountSm'), { color }]}>
+        {formatAmount(amount)}
+      </Text>
+    </View>
   );
 }
 
@@ -230,47 +241,6 @@ function yearNote({ lastMonth, currentYear }: YearStatus, year: number): string 
   return `Année en cours · réalisé jusqu’à fin ${monthName(lastMonth).toLowerCase()}`;
 }
 
-function groupRow(group: ExpenseGroup): YearTableRow {
-  return { key: group.key, label: group.label, color: group.color, values: group.months, total: group.total };
-}
-
-/** Income categories largest first, coloured by rank like the spending ones. */
-function rankedIncomeRows(flows: CategoryYearFlow[]): YearTableRow[] {
-  return flows
-    .filter((f) => f.totalIncome > 0)
-    .sort((a, b) => b.totalIncome - a.totalIncome)
-    .map((f, rank) => {
-      const label = f.categoryName ?? 'Sans catégorie';
-      return {
-        key: f.categoryName === null ? 'uncategorized' : label,
-        label,
-        color: f.categoryName === null ? colors.chartSansCategorie : chartColor(CHART_CATEGORY_COLORS, rank),
-        values: f.income,
-        total: f.totalIncome,
-      };
-    });
-}
-
-/** Appends the Total line, month by month and for the year. */
-/** Net changes read as movements: `+312,40 €` / `−85,10 €`. */
-function formatSignedAmount(amount: number): string {
-  return formatAmount(amount, { signed: true });
-}
-
-function withTotal(rows: YearTableRow[]): YearTableRow[] {
-  const cents = (n: number) => Math.round(n * 100) / 100;
-  return [
-    ...rows,
-    {
-      key: 'total',
-      label: 'Total',
-      bold: true,
-      values: Array.from({ length: 12 }, (_, m) => cents(rows.reduce((sum, row) => sum + row.values[m], 0))),
-      total: cents(rows.reduce((sum, row) => sum + (row.total ?? 0), 0)),
-    },
-  ];
-}
-
 function YearArrow({
   label,
   glyph,
@@ -296,10 +266,22 @@ function YearArrow({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title,
+  level = 'sub',
+  children,
+}: {
+  title: string;
+  /** « main »: Trésorerie and Comptable; « sub »: a block inside one of them. */
+  level?: 'main' | 'sub';
+  children: React.ReactNode;
+}) {
   return (
     <View>
-      <Text accessibilityRole="header" style={[textStyle('headingSm'), styles.ink, styles.sectionTitle]}>
+      <Text
+        accessibilityRole="header"
+        style={[textStyle(level === 'main' ? 'headingMd' : 'headingSm'), styles.ink, styles.sectionTitle]}
+      >
         {title}
       </Text>
       <View style={styles.sectionBody}>{children}</View>
@@ -351,12 +333,38 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   sectionBody: {
+    gap: spacing.md,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.hairline,
+    marginVertical: spacing.xxs,
+  },
+  balanceLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  balanceName: {
+    flex: 1,
+  },
+  balanceAmounts: {
+    alignItems: 'flex-end',
+  },
+  summary: {
+    flexDirection: 'row',
     gap: spacing.sm,
+  },
+  figure: {
+    flex: 1,
+    gap: 2,
   },
   card: {
     backgroundColor: colors.surface,
     borderRadius: rounded.lg,
     ...shadows.card,
+    padding: spacing.lg,
+    gap: spacing.xs,
   },
   emptyYear: {
     paddingVertical: spacing.xxl,
