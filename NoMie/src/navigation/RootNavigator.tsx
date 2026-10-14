@@ -1,6 +1,7 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import React, { useEffect, useRef } from 'react';
+import { SimulatedDateBanner } from '../components/SimulatedDateBanner';
 import { TabBar } from '../components/TabBar';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
 import type { NotificationDestination } from '../notifications/scheduler';
@@ -40,6 +41,7 @@ export function RootNavigator() {
 
   return (
     <MonthProvider>
+      <SimulatedDateBanner />
       <NavigationContainer
         ref={navigationRef}
         onReady={() => {

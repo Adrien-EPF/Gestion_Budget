@@ -10,6 +10,7 @@ import type { TabScreenProps } from '../navigation/types';
 import { DevNotificationTest } from '../notifications/DevNotificationTest';
 import { useNotificationScheduler } from '../notifications/NotificationSchedulerContext';
 import { isNotificationSetting, setNotificationSetting } from '../notifications/reconcile';
+import { DevelopmentGroup } from '../components/DevelopmentGroup';
 import { CategoriesScreen } from './CategoriesScreen';
 import { PendingAdvancesScreen } from './PendingAdvancesScreen';
 import { LockScreen } from '../security/LockScreen';
@@ -188,6 +189,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Réglages'>) {
         <SettingsGroup title="Saisie">
           <SwitchRow label="Clavier en montants arrondis" {...switchProps('roundedKeypad')} />
         </SettingsGroup>
+
+        <DevelopmentGroup />
 
         <Text style={[textStyle('bodySm'), styles.footer]}>
           NoMie · version alpha · données stockées sur cet appareil

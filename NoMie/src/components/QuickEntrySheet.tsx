@@ -65,7 +65,7 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
     }
     await dataService.createTransaction({
       accountId: account.id,
-      operationDate: toIsoDate(new Date()),
+      operationDate: toIsoDate(dataService.now()),
       amount: isExpense ? -value : value,
       categoryId,
     });

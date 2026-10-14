@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useDataService } from '../services/DataServiceContext';
 
 interface MonthState {
   year: number;
@@ -11,9 +12,24 @@ const MonthContext = createContext<MonthState | null>(null);
 
 /** Shared across Accueil and Budgets — changing the month affects both (see handoff §7). */
 export function MonthProvider({ children }: { children: React.ReactNode }) {
-  const now = useMemo(() => new Date(), []);
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const dataService = useDataService();
+  const [year, setYear] = useState(() => dataService.now().getFullYear());
+  const [month, setMonth] = useState(() => dataService.now().getMonth());
+
+  // The current month moves with the app clock (a new month, or a simulated date): follow it.
+  const currentMonth = useRef({ year, month });
+  useEffect(
+    () =>
+      dataService.subscribe(() => {
+        const now = dataService.now();
+        const next = { year: now.getFullYear(), month: now.getMonth() };
+        if (next.year === currentMonth.current.year && next.month === currentMonth.current.month) return;
+        currentMonth.current = next;
+        setYear(next.year);
+        setMonth(next.month);
+      }),
+    [dataService]
+  );
 
   const value = useMemo<MonthState>(
     () => ({

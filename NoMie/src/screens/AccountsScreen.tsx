@@ -14,7 +14,7 @@ import type { TabScreenProps } from '../navigation/types';
 /** Comptes (handoff §6.2): balances, one card per account, and the pointage queue. */
 export function AccountsScreen({ route }: TabScreenProps<'Comptes'>) {
   const dataService = useDataService();
-  const now = new Date();
+  const now = dataService.now();
   const [year, month] = [now.getFullYear(), now.getMonth()];
 
   const summaries = useServiceQuery((s) => s.listAccountSummaries({ year, month }), [year, month]);

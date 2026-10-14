@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AppState } from 'react-native';
 import { openExpoSqliteDatabase } from '../db/expoSqliteDatabase';
 import { DataServiceProvider } from './DataServiceContext';
 import { createDataService, type DataService } from './dataService';
@@ -21,6 +22,15 @@ export function AppDataServiceProvider({ children }: { children: React.ReactNode
       cancelled = true;
     };
   }, []);
+
+  // Back in the foreground the date may have moved on: recurrences and forecasts catch up.
+  useEffect(() => {
+    if (!dataService) return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') dataService.generateRecurrences();
+    });
+    return () => subscription.remove();
+  }, [dataService]);
 
   if (!dataService) return null;
 

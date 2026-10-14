@@ -43,7 +43,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
     return <Screen title="NoMie" showMonthSelector>{null}</Screen>;
   }
 
-  const now = new Date();
+  const now = dataService.now();
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
   const activeAccounts = summaries.filter((s) => !s.account.archived);
 

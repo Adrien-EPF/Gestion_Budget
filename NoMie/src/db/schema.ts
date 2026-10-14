@@ -98,6 +98,15 @@ CREATE TABLE IF NOT EXISTS recurrence_rules (
   generated_until TEXT
 );
 
+-- Development only: how far the app clock is moved forward, and the backup taken when the
+-- simulation started. Kept out of the backup and of its restoration, so « Revenir à aujourd'hui »
+-- can restore the snapshot and still find it.
+CREATE TABLE IF NOT EXISTS dev_clock (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  offset_days INTEGER NOT NULL DEFAULT 0,
+  snapshot TEXT
+);
+
 -- Boolean switches of the Réglages screen, stored as '1' / '0'.
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

@@ -51,7 +51,7 @@ function AddRecurrenceForm({ onClose }: { onClose: () => void }) {
   const [pickedAccountId, setPickedAccountId] = useState<number | null>(null);
   const [categoryId, setCategoryId] = useState<number | null>(null);
   const [frequency, setFrequency] = useState<RecurrenceFrequency>('monthly');
-  const [date, setDate] = useState(toTypedDate(toIsoDate(new Date())));
+  const [date, setDate] = useState(toTypedDate(toIsoDate(dataService.now())));
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
   // Until one is picked, the rule goes on the oldest active account, like a quick entry.

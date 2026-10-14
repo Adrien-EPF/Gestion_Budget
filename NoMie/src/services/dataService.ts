@@ -257,8 +257,15 @@ export interface StructureSummary {
 }
 
 export interface ServiceOptions {
-  /** The clock, injectable so date-dependent rules are testable. */
+  /** The real clock, injectable so date-dependent rules are testable. */
   now?: () => Date;
+}
+
+/** The development-only simulated date: the app clock moved forward by `offsetDays`. */
+export interface SimulatedClock {
+  offsetDays: number;
+  /** ISO date of the simulated today; `null` when the app runs on the real date. */
+  simulatedDate: string | null;
 }
 
 export interface PendingAdvances {
@@ -719,7 +726,18 @@ function deriveInitials(name: string): string {
  * is the app's one seam of test.
  */
 export function createDataService(db: SqlDatabase, options: ServiceOptions = {}) {
-  const now = options.now ?? (() => new Date());
+  const realNow = options.now ?? (() => new Date());
+  let simulatedOffsetDays = 0;
+  /**
+   * The app's single clock: every « today » of the service, and of the UI through
+   * `dataService.now()`, comes from here. It is the real clock moved forward by
+   * the simulated offset, which is 0 outside development tests.
+   */
+  const now = (): Date => {
+    const current = new Date(realNow());
+    if (simulatedOffsetDays !== 0) current.setDate(current.getDate() + simulatedOffsetDays);
+    return current;
+  };
   const listeners = new Set<() => void>();
 
   /** Screens stay mounted across tab switches, so they re-read whenever a write lands. */
@@ -736,6 +754,11 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
 
   async function initialize(): Promise<void> {
     await db.execAsync(SCHEMA_SQL);
+    await db.runAsync('INSERT OR IGNORE INTO dev_clock (id, offset_days, snapshot) VALUES (1, 0, NULL)');
+    const clock = await db.getFirstAsync<{ offset_days: number }>(
+      'SELECT offset_days FROM dev_clock WHERE id = 1'
+    );
+    simulatedOffsetDays = clock?.offset_days ?? 0;
 
     for (const { table, column, definition } of COLUMN_MIGRATIONS) {
       const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
@@ -851,7 +874,7 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     initialBalance: number;
     isSavings?: boolean;
   }): Promise<Account> {
-    const createdAt = new Date().toISOString();
+    const createdAt = now().toISOString();
     const isSavings = input.isSavings ?? false;
     const result = await db.runAsync(
       'INSERT INTO accounts (name, initial_balance, created_at, archived, is_savings) VALUES (?, ?, ?, 0, ?)',
@@ -1479,8 +1502,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     );
     if (existing) throw new Error(`« ${category.name} » already has a budget.`);
 
-    const now = new Date();
-    const startMonth = input.startMonth ?? { year: now.getFullYear(), month: now.getMonth() };
+    const current = now();
+    const startMonth = input.startMonth ?? { year: current.getFullYear(), month: current.getMonth() };
     const carryOver = input.carryOver ?? false;
     const result = await db.runAsync(
       'INSERT INTO budgets (category_id, amount, period, carry_over, start_month) VALUES (?, ?, ?, ?, ?)',
@@ -1644,7 +1667,20 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
     LEFT JOIN categories c ON c.id = r.category_id`;
 
   /**
-   * Creates the Prévision occurrences of every active rule that is set to
+   * A Prévision whose date has come is a real operation waiting to be pointed:
+   * it becomes Non pointé (a Prévision dated today or before). Idempotent, and no
+   * other status is touched.
+   */
+  async function reconcileForecasts(): Promise<number> {
+    const result = await db.runAsync(
+      `UPDATE transactions SET status = 'non_pointe' WHERE status = 'prevision' AND operation_date <= ?`,
+      [today()]
+    );
+    return result.changes;
+  }
+
+  /**
+   * Occurrences are created for every active rule that is set to
    * automatic, up to the horizon. A rule left on manual never produces
    * anything here: its occurrences wait for the user (#3 « Récurrence »).
    * Each rule remembers how far it has been generated, so an occurrence the
@@ -1694,7 +1730,8 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
       });
       created += dates.length;
     }
-    if (created > 0) notifyChange();
+    const reconciled = await reconcileForecasts();
+    if (created > 0 || reconciled > 0) notifyChange();
     return created;
   }
 
@@ -1816,6 +1853,44 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   async function deleteOccurrence(id: number): Promise<void> {
     await requireOccurrence(id);
     await db.runAsync('DELETE FROM transactions WHERE id = ?', [id]);
+    notifyChange();
+  }
+
+  async function getSimulatedClock(): Promise<SimulatedClock> {
+    return {
+      offsetDays: simulatedOffsetDays,
+      simulatedDate: simulatedOffsetDays === 0 ? null : today(),
+    };
+  }
+
+  /**
+   * Development only. Moves the app clock forward by `days`. The first advance
+   * of a simulation takes a snapshot of the database with the backup mechanism,
+   * so `resetSimulatedDate` can undo everything the test does. Then the
+   * recurrences and forecasts catch up with the new date.
+   */
+  async function advanceSimulatedDays(days: number): Promise<void> {
+    if (!Number.isInteger(days) || days < 1) {
+      throw new Error('The simulated date moves forward by a whole number of days, at least 1.');
+    }
+    if (simulatedOffsetDays === 0) {
+      const snapshot = JSON.stringify(await createBackup());
+      await db.runAsync('UPDATE dev_clock SET snapshot = ? WHERE id = 1', [snapshot]);
+    }
+    simulatedOffsetDays += days;
+    await db.runAsync('UPDATE dev_clock SET offset_days = ? WHERE id = 1', [simulatedOffsetDays]);
+    await generateRecurrences();
+    notifyChange();
+  }
+
+  /** Development only. Restores the snapshot taken when the simulation started, then puts the clock back to the real date. */
+  async function resetSimulatedDate(): Promise<void> {
+    const row = await db.getFirstAsync<{ snapshot: string | null }>(
+      'SELECT snapshot FROM dev_clock WHERE id = 1'
+    );
+    if (row?.snapshot) await restoreBackup(row.snapshot);
+    simulatedOffsetDays = 0;
+    await db.runAsync('UPDATE dev_clock SET offset_days = 0, snapshot = NULL WHERE id = 1');
     notifyChange();
   }
 
@@ -2103,6 +2178,11 @@ export function createDataService(db: SqlDatabase, options: ServiceOptions = {})
   return {
     initialize,
     subscribe,
+    now,
+    getSimulatedClock,
+    advanceSimulatedDays,
+    resetSimulatedDate,
+    reconcileForecasts,
     listCategories,
     createCategory,
     updateCategory,

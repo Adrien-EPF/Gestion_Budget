@@ -4,6 +4,8 @@ import { formatAmount } from '../utils/formatAmount';
 import { plain, press, renderApp, typeInto } from '../test-utils/renderWithApp';
 
 const today = toIsoDate(new Date());
+// An occurrence dated today is already a real operation (Non pointé); the next one is still to come.
+const tomorrow = toIsoDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
 
 describe('Écran Récurrences', () => {
   let app: Awaited<ReturnType<typeof renderApp>>;
@@ -194,7 +196,7 @@ describe('Écran Récurrences', () => {
 
   describe('prochaines occurrences', () => {
     it('edits one occurrence without touching its rule', async () => {
-      await createRule({ automatic: true });
+      await createRule({ automatic: true, referenceDate: tomorrow });
       await openRecurrences();
 
       await press(screen.getAllByLabelText('Loyer, Prévision')[0]);

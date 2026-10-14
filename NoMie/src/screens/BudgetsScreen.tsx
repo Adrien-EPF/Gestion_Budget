@@ -7,7 +7,7 @@ import { ProgressBar } from '../components/ProgressBar';
 import { Screen } from '../components/Screen';
 import { useMonth } from '../navigation/MonthContext';
 import type { Budget, BudgetOverview } from '../services/dataService';
-import { useServiceQuery } from '../services/DataServiceContext';
+import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, rounded, shadows, spacing, textStyle } from '../theme/tokens';
 import { describeMonthProgress, monthElapsedFraction } from '../utils/budgetCopy';
 import { formatAmount } from '../utils/formatAmount';
@@ -60,7 +60,7 @@ function SummaryCard({
   month: number;
 }) {
   const { spent, planned } = overview;
-  const elapsed = monthElapsedFraction(new Date(), { year, month });
+  const elapsed = monthElapsedFraction(useDataService().now(), { year, month });
 
   return (
     <View style={styles.summary}>
