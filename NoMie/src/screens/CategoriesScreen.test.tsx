@@ -133,6 +133,7 @@ describe('Écran Catégories (#21, #26)', () => {
       );
 
       await press(screen.getByLabelText('Fermer'));
+      await press(screen.getByLabelText('Accueil'));
       await press(screen.getByLabelText('Nouvelle opération'));
       expect(screen.queryByLabelText('Restaurant')).toBeNull();
     });

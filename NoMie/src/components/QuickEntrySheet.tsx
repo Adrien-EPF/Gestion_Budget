@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useOperationEditor } from '../navigation/OperationEditorContext';
 import { useDataService, useServiceQuery } from '../services/DataServiceContext';
 import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
@@ -53,6 +53,7 @@ export function QuickEntrySheet({ visible, onClose }: QuickEntrySheetProps) {
 }
 
 function QuickEntryForm({ onClose }: { onClose: () => void }) {
+  const { height } = useWindowDimensions();
   const dataService = useDataService();
   const editor = useOperationEditor();
   const categories = useServiceQuery((s) => s.listCategories());
@@ -138,7 +139,11 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
   const amountColor = isExpense ? colors.amountNegative : colors.amountPositive;
 
   return (
-    <View>
+    <ScrollView
+      style={{ maxHeight: height * 0.85 }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       <Text style={[textStyle('headingMd'), styles.title]}>Nouvelle opération</Text>
 
       <View style={styles.amountRow}>
@@ -254,7 +259,7 @@ function QuickEntryForm({ onClose }: { onClose: () => void }) {
           ? 'Crée d’abord un compte dans l’onglet Comptes pour enregistrer une opération.'
           : '« Plus d’options » ouvre l’écran complet : compte, dates, statut, répartition.'}
       </Text>
-    </View>
+    </ScrollView>
   );
 }
 

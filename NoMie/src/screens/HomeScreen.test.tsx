@@ -311,9 +311,9 @@ describe('Écran Accueil', () => {
       await add({ operationDate: today, amount: -5, comment: 'Café' });
 
       expect(screen.getAllByText(plain(`Avancé ${formatAmount(14.25)}`))).toHaveLength(1);
-      const row = screen.getByLabelText('Le Comptoir, Non pointé');
+      const row = screen.getByTestId('transaction-row-Le Comptoir');
       expect(within(row).getByText(plain(`Avancé ${formatAmount(14.25)}`))).toBeTruthy();
-      expect(within(screen.getByLabelText('Café, Non pointé')).queryByText(/Avancé/)).toBeNull();
+      expect(within(screen.getByTestId('transaction-row-Café')).queryByText(/Avancé/)).toBeNull();
     });
 
     it('does not change how the row is pointed: the whole transaction is toggled', async () => {

@@ -82,6 +82,21 @@ describe('Écran Budgets', () => {
       expect(screen.queryByLabelText('Restaurant')).toBeNull();
     });
 
+    it('clears each field error as soon as that field is corrected (#53)', async () => {
+      await openBudgets();
+      await press(screen.getByText('+ Ajouter un budget'));
+      await press(screen.getByLabelText('Ajouter'));
+      expect(screen.getByText(/Choisis la catégorie/)).toBeTruthy();
+      expect(screen.getByText(/montant prévu doit être/)).toBeTruthy();
+
+      await press(screen.getByLabelText('Restaurant'));
+      expect(screen.queryByText(/Choisis la catégorie/)).toBeNull();
+      expect(screen.getByText(/montant prévu doit être/)).toBeTruthy();
+
+      await typeInto(screen.getByLabelText('Montant prévu par mois'), '100');
+      expect(screen.queryByText(/montant prévu doit être/)).toBeNull();
+    });
+
     it('creates a budget on an importance level, once per level, and shows it consuming the bilan', async () => {
       await seed((s) =>
         s.createTransaction({

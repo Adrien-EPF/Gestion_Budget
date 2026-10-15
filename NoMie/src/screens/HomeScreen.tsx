@@ -55,7 +55,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
     comparison === undefined ||
     !offBalance
   ) {
-    return <Screen title="NoMie" showMonthSelector>{null}</Screen>;
+    return <Screen title="NoMie" showMonthSelector showFab>{null}</Screen>;
   }
 
   const now = dataService.now();
@@ -230,7 +230,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Accueil'>) {
   );
 
   return (
-    <Screen title="NoMie" showMonthSelector>
+    <Screen title="NoMie" showMonthSelector showFab>
       <FlatList
         data={transactions}
         keyExtractor={(item) => String(item.id)}

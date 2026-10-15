@@ -49,7 +49,7 @@ export function AccountsScreen({ route }: TabScreenProps<'Comptes'>) {
     listRef.current?.scrollToOffset({ offset: toPointY, animated: true });
   }, [scrollToken, toPointY]);
 
-  if (!summaries || !totals) return <Screen title="Comptes">{null}</Screen>;
+  if (!summaries || !totals) return <Screen title="Comptes" showFab>{null}</Screen>;
 
   const rows = toPoint ?? [];
 
@@ -134,7 +134,7 @@ export function AccountsScreen({ route }: TabScreenProps<'Comptes'>) {
   );
 
   return (
-    <Screen title="Comptes">
+    <Screen title="Comptes" showFab>
       <FlatList
         ref={listRef}
         data={rows}

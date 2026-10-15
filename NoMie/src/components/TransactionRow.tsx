@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { TransactionListItem } from '../services/dataService';
 import { colors, fontFamilies, rounded, spacing, textStyle } from '../theme/tokens';
@@ -36,12 +36,14 @@ export function TransactionRow({
     .filter(Boolean)
     .join(' · ');
 
+  const [pressed, setPressed] = useState(false);
+
+  // The row is a View with a full-bleed Pressable behind its content, so the pointage button is a
+  // sibling of the row's button, never nested in it (nested <button>s are invalid HTML on web).
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label}, ${STATUS_LABELS[status]}`}
-      onPress={onPress}
-      style={({ pressed }) => [
+    <View
+      testID={`transaction-row-${label}`}
+      style={[
         styles.row,
         !isFirst && styles.divider,
         isFirst && styles.first,
@@ -50,7 +52,15 @@ export function TransactionRow({
         status === 'fantome' && styles.ghost,
       ]}
     >
-      <View style={[styles.icon, toPointTone && { backgroundColor: colors.statusNonPointeSoft }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}, ${STATUS_LABELS[status]}`}
+        onPress={onPress}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        style={StyleSheet.absoluteFill}
+      />
+      <View pointerEvents="none" style={[styles.icon, toPointTone && { backgroundColor: colors.statusNonPointeSoft }]}>
         <Text
           style={[
             textStyle('bodySm'),
@@ -61,11 +71,11 @@ export function TransactionRow({
           {categoryIcon ?? '–'}
         </Text>
       </View>
-      <View style={styles.body}>
-        <Text style={[textStyle('bodyMdMedium'), styles.label]} numberOfLines={1}>
+      <View pointerEvents="box-none" style={styles.body}>
+        <Text style={[textStyle('bodyMdMedium'), styles.label]} numberOfLines={1} pointerEvents="none">
           {label}
         </Text>
-        <View style={styles.meta}>
+        <View pointerEvents="box-none" style={styles.meta}>
           {onTogglePointage && (status === 'non_pointe' || status === 'pointe') ? (
             <Pressable
               accessibilityRole="button"
@@ -78,17 +88,18 @@ export function TransactionRow({
           ) : (
             <StatusPill status={status} />
           )}
-          <Text style={[textStyle('bodySm'), styles.metaText]} numberOfLines={1}>
+          <Text style={[textStyle('bodySm'), styles.metaText]} numberOfLines={1} pointerEvents="none">
             {meta}
           </Text>
           {advancedAmount > 0 ? (
-            <Text style={[textStyle('bodySm'), styles.advance]} numberOfLines={1}>
+            <Text style={[textStyle('bodySm'), styles.advance]} numberOfLines={1} pointerEvents="none">
               {`Avancé ${formatAmount(advancedAmount)}`}
             </Text>
           ) : null}
         </View>
       </View>
       <Text
+        pointerEvents="none"
         style={[
           textStyle('amountLg'),
           styles.amount,
@@ -97,7 +108,7 @@ export function TransactionRow({
       >
         {formatAmount(amount, { signed: true })}
       </Text>
-    </Pressable>
+    </View>
   );
 }
 

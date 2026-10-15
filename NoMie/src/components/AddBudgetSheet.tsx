@@ -78,7 +78,10 @@ function AddBudgetForm({ onClose }: { onClose: () => void }) {
           <Chips
             options={(importances ?? []).map((level) => ({ value: level, label: IMPORTANCE_LABELS[level] }))}
             value={importance}
-            onChange={(level) => setImportance(level === importance ? null : level)}
+            onChange={(level) => {
+              setImportance(level === importance ? null : level);
+              setCategoryError(null);
+            }}
           />
           {categoryError ? <Text style={[textStyle('bodySm'), styles.error]}>{categoryError}</Text> : null}
           {importances && importances.length === 0 ? (
@@ -103,7 +106,10 @@ function AddBudgetForm({ onClose }: { onClose: () => void }) {
                 accessibilityRole="button"
                 accessibilityLabel={category.name}
                 accessibilityState={{ selected }}
-                onPress={() => setCategoryId(selected ? null : category.id)}
+                onPress={() => {
+                  setCategoryId(selected ? null : category.id);
+                  setCategoryError(null);
+                }}
                 style={[styles.chip, selected && { backgroundColor: colors.primary }]}
               >
                 <Text
@@ -127,7 +133,10 @@ function AddBudgetForm({ onClose }: { onClose: () => void }) {
       <TextField
         label="Montant prévu par mois"
         value={amount}
-        onChangeText={setAmount}
+        onChangeText={(text) => {
+          setAmount(text);
+          setAmountError(null);
+        }}
         placeholder="120"
         keyboardType="numbers-and-punctuation"
         error={amountError}
